@@ -1,0 +1,16 @@
+{
+  "name": "fediq",
+  "version": "0.0.0",
+  "author": "pbzweihander <pbzweihander@gmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "prettier": "prettier --write --config prettier.config.cjs './templates/**/*.{html,css}'",
+    "tailwindcss": "tailwindcss -i templates/base.css -o dist/index.css"
+  },
+  "devDependencies": {
+    "daisyui": "^4.4.6",
+    "prettier": "^3.1.0",
+    "prettier-plugin-tailwindcss": "^0.5.7",
+    "tailwindcss": "^3.3.5"
+  }
+}

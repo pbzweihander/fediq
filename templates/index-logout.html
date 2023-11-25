@@ -1,0 +1,25 @@
+{% extends "index.html" %} {% block content %}
+<h2 class="text-xl font-bold">{{ language|t("login") }}</h2>
+<form class="form-control" method="post">
+  <input type="hidden" name="type" value="login" />
+  <label class="label label-text">{{ language|t("domain-input") }}</label>
+  <input
+    type="text"
+    class="input{% if domain_error.is_some() %} input-error{% endif %} input-bordered"
+    name="domain"
+    placeholder="mastodon.social"
+    value="{{ domain }}"
+    required
+  />
+  {% if let Some(error) = domain_error %} {% if let Some(detail) = error.detail
+  %}
+  <details class="label label-text-alt text-error">
+    <summary>{{ error.summary }}</summary>
+    <p class="m-2.5 whitespace-pre-wrap font-mono">{{- detail -}}</p>
+  </details>
+  {% else %}
+  <label class="label label-text-alt text-error"> {{ error.summary }} </label>
+  {% endif %} {% endif %} {% let t_login = self::t(language, "login") %}
+  <input type="submit" class="btn btn-primary mt-5" value="{{ t_login }}" />
+</form>
+{% endblock %}
