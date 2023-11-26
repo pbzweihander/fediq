@@ -41,3 +41,5 @@ RUN cargo build --release
 FROM docker.io/debian:stable-slim AS runtime
 
 COPY --from=builder /app/target/release/fediq /app/target/release/fediq-poster /usr/local/bin/
+
+CMD ["fediq"]
