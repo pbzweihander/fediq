@@ -45,7 +45,7 @@ pub struct IndexLoginTemplate {
     pub quote_error: Option<TemplateError>,
     pub cron_input: String,
     pub cron_error: Option<TemplateError>,
-    pub dedup_duration_hours: u32,
+    pub dedup_duration_minutes: u32,
     pub suspend_schedule: bool,
 }
 

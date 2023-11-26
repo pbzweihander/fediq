@@ -19,7 +19,7 @@ struct Config {
     software: String,
     quotes_configmap_name: String,
     quote_dedup_configmap_name: String,
-    dedup_duration_hours: u32,
+    dedup_duration_minutes: u32,
 }
 
 static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
@@ -179,7 +179,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    let dedup_timestamp = now + Duration::hours(config.dedup_duration_hours as i64);
+    let dedup_timestamp = now + Duration::minutes(config.dedup_duration_minutes as i64);
     quote_dedup_configmap_data.insert(
         quote_id.to_string(),
         dedup_timestamp

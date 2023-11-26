@@ -187,19 +187,19 @@ user.avatar_url %}
     </div>
   </details>
   <label class="label label-text">
-    {{ language|t("dedup-duration-hours") }}
+    {{ language|t("dedup-duration-minutes") }}
   </label>
   <div class="join">
     <input
       type="number"
       class="input join-item input-bordered flex-1"
-      name="dedup_duration_hours"
+      name="dedup_duration_minutes"
       placeholder="1"
       min="0"
-      value="{{ dedup_duration_hours }}"
+      value="{{ dedup_duration_minutes }}"
     />
     <label class="label join-item bg-base-200 px-2">
-      {{ language|t("hours") }}
+      {{ language|t("minutes") }}
     </label>
   </div>
   <label class="label cursor-pointer">

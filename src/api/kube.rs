@@ -22,7 +22,7 @@ use crate::config::CONFIG;
 
 use super::fediverse::FediverseApp;
 
-const DEDUP_DURATION_HOURS_ANNOTATION_KEY: &str = "fediq.pbzweihander.dev/dedup-duration-hours";
+const DEDUP_DURATION_MINUTES_ANNOTATION_KEY: &str = "fediq.pbzweihander.dev/dedup-duration-minutes";
 
 async fn client() -> anyhow::Result<kube::Client> {
     static CLIENT: OnceCell<kube::Client> = OnceCell::new();
@@ -321,15 +321,15 @@ pub async fn load_cronjob(domain: &str, handle: &str) -> anyhow::Result<(String,
         return Ok((String::new(), 0, false));
     };
 
-    let dedup_duration_hours = poster_cronjob
+    let dedup_duration_minutes = poster_cronjob
         .annotations()
-        .get(DEDUP_DURATION_HOURS_ANNOTATION_KEY)
+        .get(DEDUP_DURATION_MINUTES_ANNOTATION_KEY)
         .and_then(|v| v.parse::<u32>().ok())
         .unwrap_or(0);
 
     Ok((
         poster_cronjob_spec.schedule.clone(),
-        dedup_duration_hours,
+        dedup_duration_minutes,
         poster_cronjob_spec.suspend.unwrap_or(false),
     ))
 }
@@ -340,7 +340,7 @@ pub async fn save_cronjob(
     access_token: &str,
     software: &str,
     cron: &str,
-    dedup_duration_hours: u32,
+    dedup_duration_minutes: u32,
     suspend: bool,
 ) -> anyhow::Result<()> {
     let client = client().await?;
@@ -348,8 +348,8 @@ pub async fn save_cronjob(
 
     let mut poster_cronjob_annotations = BTreeMap::<String, String>::new();
     poster_cronjob_annotations.insert(
-        DEDUP_DURATION_HOURS_ANNOTATION_KEY.to_string(),
-        dedup_duration_hours.to_string(),
+        DEDUP_DURATION_MINUTES_ANNOTATION_KEY.to_string(),
+        dedup_duration_minutes.to_string(),
     );
 
     let poster_cronjob_name = poster_cronjob_name(domain, handle);
@@ -402,8 +402,8 @@ pub async fn save_cronjob(
                                         value_from: None,
                                     },
                                     EnvVar {
-                                        name: "DEDUP_DURATION_HOURS".to_string(),
-                                        value: Some(dedup_duration_hours.to_string()),
+                                        name: "DEDUP_DURATION_MINUTES".to_string(),
+                                        value: Some(dedup_duration_minutes.to_string()),
                                         value_from: None,
                                     },
                                 ]),

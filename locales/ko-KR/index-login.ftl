@@ -40,9 +40,9 @@ cron-expression-warning-utc = cron 표현식에 적는 시각은 UTC 기준이�
 
 configure-schedule-error = 스케줄 설정에 실패했습니다.
 
-dedup-duration-hours = 한 번 보낸 대사를 중복해서 다시 보내지 않는 시간 간격 (중복 방지 기능을 끄려면 0)
+dedup-duration-minutes = 한 번 보낸 대사를 중복해서 다시 보내지 않는 시간 간격 (단위: 분) (중복 방지 기능을 끄려면 0)
 
-hours = 시간
+minutes = 분
 
 suspend = 일시정지
 

@@ -52,7 +52,7 @@ async fn get_index(
                 tracing::error!(?error, "failed to load quotes");
                 Vec::new()
             });
-        let (cron_input, dedup_duration_hours, suspend_schedule) =
+        let (cron_input, dedup_duration_minutes, suspend_schedule) =
             load_cronjob(&user.domain, &user.handle)
                 .await
                 .unwrap_or_else(|error| {
@@ -70,7 +70,7 @@ async fn get_index(
             quote_error: None,
             cron_input,
             cron_error: None,
-            dedup_duration_hours,
+            dedup_duration_minutes,
             suspend_schedule,
         })
     } else {
@@ -135,7 +135,7 @@ enum PostIndexReq {
         #[serde(default)]
         suspend: String,
         #[serde(default)]
-        dedup_duration_hours: String,
+        dedup_duration_minutes: String,
     },
     DeleteQuote {
         quote_id: Ulid,
@@ -180,7 +180,7 @@ async fn post_index(
                         tracing::error!(?error, "failed to load quotes");
                         Vec::new()
                     });
-                let (cron_input, dedup_duration_hours, suspend_schedule) =
+                let (cron_input, dedup_duration_minutes, suspend_schedule) =
                     load_cronjob(&user.domain, &user.handle)
                         .await
                         .unwrap_or_else(|error| {
@@ -200,7 +200,7 @@ async fn post_index(
                     }),
                     cron_input,
                     cron_error: None,
-                    dedup_duration_hours,
+                    dedup_duration_minutes,
                     suspend_schedule,
                     language,
                 })
@@ -213,7 +213,7 @@ async fn post_index(
                         .map(|s| s.trim().to_string())
                         .collect(),
                 };
-                let (cron_input, dedup_duration_hours, suspend_schedule) =
+                let (cron_input, dedup_duration_minutes, suspend_schedule) =
                     load_cronjob(&user.domain, &user.handle)
                         .await
                         .unwrap_or_else(|error| {
@@ -231,7 +231,7 @@ async fn post_index(
                         quote_error: None,
                         cron_input,
                         cron_error: None,
-                        dedup_duration_hours,
+                        dedup_duration_minutes,
                         suspend_schedule,
                         language,
                     }),
@@ -247,7 +247,7 @@ async fn post_index(
                         }),
                         cron_input,
                         cron_error: None,
-                        dedup_duration_hours,
+                        dedup_duration_minutes,
                         suspend_schedule,
                         language,
                     }),
@@ -259,11 +259,11 @@ async fn post_index(
             PostIndexReq::ConfigureSchedule {
                 cron,
                 suspend,
-                dedup_duration_hours,
+                dedup_duration_minutes,
             },
         ) => {
             let suspend = suspend == "on";
-            let dedup_duration_hours = dedup_duration_hours.parse::<u32>().unwrap_or(0);
+            let dedup_duration_minutes = dedup_duration_minutes.parse::<u32>().unwrap_or(0);
             let quotes = load_quotes(&user.domain, &user.handle)
                 .await
                 .unwrap_or_else(|error| {
@@ -284,7 +284,7 @@ async fn post_index(
                         summary: t(&language, "value-cannot-empty"),
                         detail: None,
                     }),
-                    dedup_duration_hours,
+                    dedup_duration_minutes,
                     suspend_schedule: suspend,
                     language,
                 });
@@ -296,7 +296,7 @@ async fn post_index(
                 &user.access_token,
                 &user.software,
                 &cron,
-                dedup_duration_hours,
+                dedup_duration_minutes,
                 suspend,
             )
             .await
@@ -310,7 +310,7 @@ async fn post_index(
                     quote_error: None,
                     cron_input: cron,
                     cron_error: None,
-                    dedup_duration_hours,
+                    dedup_duration_minutes,
                     suspend_schedule: suspend,
                     language,
                 }),
@@ -326,7 +326,7 @@ async fn post_index(
                         summary: t(&language, "configure-schedule-error"),
                         detail: Some(format!("{error:?}")),
                     }),
-                    dedup_duration_hours,
+                    dedup_duration_minutes,
                     suspend_schedule: suspend,
                     language,
                 }),
@@ -339,7 +339,7 @@ async fn post_index(
                     tracing::error!(?error, "failed to load quotes");
                     Vec::new()
                 });
-            let (cron_input, dedup_duration_hours, suspend_schedule) =
+            let (cron_input, dedup_duration_minutes, suspend_schedule) =
                 load_cronjob(&user.domain, &user.handle)
                     .await
                     .unwrap_or_else(|error| {
@@ -356,7 +356,7 @@ async fn post_index(
                 quote_error: None,
                 cron_input,
                 cron_error: None,
-                dedup_duration_hours,
+                dedup_duration_minutes,
                 suspend_schedule,
                 language,
             })
