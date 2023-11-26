@@ -18,6 +18,7 @@ jobs:
             ghcr.io/${{ github.repository }}
           tags: |
             type=sha,format=long,prefix=
+            type=ref,event=pr
           flavor: |
             latest=true
       - uses: actions/checkout@v3
