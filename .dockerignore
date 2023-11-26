@@ -1,4 +1,11 @@
-dist
 .git
+.github
+dist
 node_modules
 target
+.dockerignore
+.gitignore
+Dockerfile
+LICENSE
+prettier.config.cjs
+README.md
