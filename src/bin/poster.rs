@@ -79,7 +79,7 @@ async fn post_misskey(domain: &str, access_token: &str, quote: &str) -> anyhow::
     let req = PostMisskeyReq {
         i: access_token,
         text: quote,
-        visibility: "unlisted",
+        visibility: "home",
     };
     let url = format!("https://{domain}/api/notes/create");
     let resp = HTTP_CLIENT

@@ -1,5 +1,6 @@
 .git
 .github
+chart
 dist
 node_modules
 target
