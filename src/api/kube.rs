@@ -34,19 +34,19 @@ async fn client() -> anyhow::Result<kube::Client> {
 }
 
 fn fediverse_app_secret_name(domain: &str) -> String {
-    format!("fediq-fediverse-app-{domain}")
+    format!("fediq-fediverse-app-{domain}").replace('_', '-')
 }
 
 fn quotes_configmap_name(domain: &str, handle: &str) -> String {
-    format!("fediq-quotes-{domain}-{handle}")
+    format!("fediq-quotes-{domain}-{handle}").replace('_', '-')
 }
 
 fn quote_dedup_configmap_name(domain: &str, handle: &str) -> String {
-    format!("fediq-quote-dedup-{domain}-{handle}")
+    format!("fediq-quote-dedup-{domain}-{handle}").replace('_', '-')
 }
 
 fn poster_cronjob_name(domain: &str, handle: &str) -> String {
-    format!("fediq-poster-{domain}-{handle}")
+    format!("fediq-poster-{domain}-{handle}").replace('_', '-')
 }
 
 pub async fn load_fediverse_app(domain: &str) -> anyhow::Result<Option<FediverseApp>> {
