@@ -1,8 +1,8 @@
 FROM docker.io/node:21 AS node
-WORKDIR app
+WORKDIR /app
 
-FROM docker.io/lukemathwalker/cargo-chef:latest-rust-1.73 AS chef
-WORKDIR app
+FROM docker.io/lukemathwalker/cargo-chef:latest-rust-1.86 AS chef
+WORKDIR /app
 
 FROM node AS css-builder
 

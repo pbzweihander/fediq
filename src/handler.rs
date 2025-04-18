@@ -41,6 +41,15 @@ async fn get_healthz() -> &'static str {
     "ok"
 }
 
+fn fmt_user(user: &Option<FediverseUser>) -> String {
+    if let Some(user) = user {
+        user.to_string()
+    } else {
+        "(none)".to_string()
+    }
+}
+
+#[tracing::instrument(skip_all, fields(user = fmt_user(&user)))]
 async fn get_index(
     Language(language): Language,
     user: Option<FediverseUser>,
@@ -142,6 +151,7 @@ enum PostIndexReq {
     },
 }
 
+#[tracing::instrument(skip_all, fields(user = fmt_user(&user)))]
 async fn post_index(
     user: Option<FediverseUser>,
     Language(language): Language,
@@ -162,14 +172,17 @@ async fn post_index(
 
             match get_auth_redirect_url(&domain).await {
                 Ok(redirect_url) => Err(Ok(Redirect::to(redirect_url.as_str()))),
-                Err(error) => Err(Err(IndexLogoutTemplate {
-                    domain,
-                    domain_error: Some(TemplateError {
-                        summary: t(&language, "login-error"),
-                        detail: Some(format!("{error:?}")),
-                    }),
-                    language,
-                })),
+                Err(error) => {
+                    tracing::warn!(?error, "failed to get auth redirect URL");
+                    Err(Err(IndexLogoutTemplate {
+                        domain,
+                        domain_error: Some(TemplateError {
+                            summary: t(&language, "login-error"),
+                            detail: Some(format!("{error:?}")),
+                        }),
+                        language,
+                    }))
+                }
             }
         }
         (Some(user), PostIndexReq::AddQuote(req)) => {
@@ -235,22 +248,25 @@ async fn post_index(
                         suspend_schedule,
                         language,
                     }),
-                    Err(error) => Ok(IndexLoginTemplate {
-                        user,
-                        quotes: Vec::new(),
-                        is_bulk_selected: req.is_bulk(),
-                        quote_input: req.as_one_by_one(),
-                        quote_bulk_input: req.as_bulk(),
-                        quote_error: Some(TemplateError {
-                            summary: t(&language, "add-quote-error"),
-                            detail: Some(format!("{error:?}")),
-                        }),
-                        cron_input,
-                        cron_error: None,
-                        dedup_duration_minutes,
-                        suspend_schedule,
-                        language,
-                    }),
+                    Err(error) => {
+                        tracing::warn!(?error, "failed to add quotes");
+                        Ok(IndexLoginTemplate {
+                            user,
+                            quotes: Vec::new(),
+                            is_bulk_selected: req.is_bulk(),
+                            quote_input: req.as_one_by_one(),
+                            quote_bulk_input: req.as_bulk(),
+                            quote_error: Some(TemplateError {
+                                summary: t(&language, "add-quote-error"),
+                                detail: Some(format!("{error:?}")),
+                            }),
+                            cron_input,
+                            cron_error: None,
+                            dedup_duration_minutes,
+                            suspend_schedule,
+                            language,
+                        })
+                    }
                 }
             }
         }
@@ -314,22 +330,25 @@ async fn post_index(
                     suspend_schedule: suspend,
                     language,
                 }),
-                Err(error) => Ok(IndexLoginTemplate {
-                    user,
-                    quotes,
-                    is_bulk_selected: false,
-                    quote_input: String::new(),
-                    quote_bulk_input: String::new(),
-                    quote_error: None,
-                    cron_input: cron,
-                    cron_error: Some(TemplateError {
-                        summary: t(&language, "configure-schedule-error"),
-                        detail: Some(format!("{error:?}")),
-                    }),
-                    dedup_duration_minutes,
-                    suspend_schedule: suspend,
-                    language,
-                }),
+                Err(error) => {
+                    tracing::warn!(?error, "failed to save cronjob");
+                    Ok(IndexLoginTemplate {
+                        user,
+                        quotes,
+                        is_bulk_selected: false,
+                        quote_input: String::new(),
+                        quote_bulk_input: String::new(),
+                        quote_error: None,
+                        cron_input: cron,
+                        cron_error: Some(TemplateError {
+                            summary: t(&language, "configure-schedule-error"),
+                            detail: Some(format!("{error:?}")),
+                        }),
+                        dedup_duration_minutes,
+                        suspend_schedule: suspend,
+                        language,
+                    })
+                }
             }
         }
         (Some(user), PostIndexReq::DeleteQuote { quote_id }) => {

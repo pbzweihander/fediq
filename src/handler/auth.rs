@@ -1,3 +1,5 @@
+use std::fmt;
+
 use async_trait::async_trait;
 use axum::{
     extract::{FromRequestParts, Path, Query},
@@ -29,6 +31,16 @@ pub struct FediverseUser {
     pub access_token: String,
     pub software: String,
     exp: i64,
+}
+
+impl fmt::Display for FediverseUser {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(name) = &self.name {
+            write!(f, "{} ({}@{})", name, self.handle, self.domain)
+        } else {
+            write!(f, "{}@{}", self.handle, self.domain)
+        }
+    }
 }
 
 impl FediverseUser {
