@@ -3,25 +3,26 @@ name: clippy
 on:
   push:
     branches:
-      - main
+    - main
   pull_request:
 
 jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 21
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          components: clippy
-      - uses: actions/checkout@v3
-      - run: yarn
-      - uses: Swatinem/rust-cache@v2
-      - uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --no-deps --all-targets -- -D warnings
+    - name: Download tailwindcss
+      run: |
+        curl -LO https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64 &&\
+        chmod +x tailwindcss-linux-x64 &&\
+        mv tailwindcss-linux-x64 /usr/local/bin/tailwindcss
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        components: clippy
+    - uses: actions/checkout@v3
+    - uses: Swatinem/rust-cache@v2
+    - uses: actions-rs/clippy-check@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        args: --no-deps --all-targets -- -D warnings

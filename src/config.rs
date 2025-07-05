@@ -1,4 +1,4 @@
-use anyhow::Context;
+use eyre::Context;
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use url::Url;
@@ -37,7 +37,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn try_from_env() -> anyhow::Result<Self> {
+    pub fn try_from_env() -> eyre::Result<Self> {
         envy::from_env().context("failed to read config from environment variables")
     }
 }

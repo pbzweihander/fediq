@@ -9,9 +9,7 @@ use super::auth::FediverseUser;
 mod filters;
 
 fn t(language: &LanguageIdentifier, text_id: &str) -> String {
-    LOCALES
-        .lookup(language, text_id)
-        .unwrap_or_else(|| format!("t({})", text_id))
+    LOCALES.lookup(language, text_id)
 }
 
 // fn ta<'a>(

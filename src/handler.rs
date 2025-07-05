@@ -2,7 +2,12 @@ pub mod auth;
 mod extract;
 mod templates;
 
-use axum::{headers, response::Redirect, routing, Form, Router, TypedHeader};
+use askama::Template;
+use axum::{
+    response::{Html, Redirect},
+    routing, Form, Router,
+};
+use axum_extra::{headers, TypedHeader};
 use serde::Deserialize;
 use ulid::Ulid;
 
@@ -41,8 +46,8 @@ async fn get_healthz() -> &'static str {
     "ok"
 }
 
-fn fmt_user(user: &Option<FediverseUser>) -> String {
-    if let Some(user) = user {
+fn fmt_user(user: &Result<FediverseUser, ()>) -> String {
+    if let Ok(user) = user {
         user.to_string()
     } else {
         "(none)".to_string()
@@ -50,11 +55,8 @@ fn fmt_user(user: &Option<FediverseUser>) -> String {
 }
 
 #[tracing::instrument(skip_all, fields(user = fmt_user(&user)))]
-async fn get_index(
-    Language(language): Language,
-    user: Option<FediverseUser>,
-) -> Result<IndexLoginTemplate, IndexLogoutTemplate> {
-    if let Some(user) = user {
+async fn get_index(Language(language): Language, user: Result<FediverseUser, ()>) -> Html<String> {
+    if let Ok(user) = user {
         let quotes = load_quotes(&user.domain, &user.handle)
             .await
             .unwrap_or_else(|error| {
@@ -69,25 +71,33 @@ async fn get_index(
                     (String::new(), 0, false)
                 });
 
-        Ok(IndexLoginTemplate {
-            language,
-            user,
-            quotes,
-            is_bulk_selected: false,
-            quote_input: String::new(),
-            quote_bulk_input: String::new(),
-            quote_error: None,
-            cron_input,
-            cron_error: None,
-            dedup_duration_minutes,
-            suspend_schedule,
-        })
+        Html(
+            IndexLoginTemplate {
+                language,
+                user,
+                quotes,
+                is_bulk_selected: false,
+                quote_input: String::new(),
+                quote_bulk_input: String::new(),
+                quote_error: None,
+                cron_input,
+                cron_error: None,
+                dedup_duration_minutes,
+                suspend_schedule,
+            }
+            .render()
+            .unwrap(),
+        )
     } else {
-        Err(IndexLogoutTemplate {
-            language,
-            domain: String::new(),
-            domain_error: None,
-        })
+        Html(
+            IndexLogoutTemplate {
+                language,
+                domain: String::new(),
+                domain_error: None,
+            }
+            .render()
+            .unwrap(),
+        )
     }
 }
 
@@ -153,39 +163,47 @@ enum PostIndexReq {
 
 #[tracing::instrument(skip_all, fields(user = fmt_user(&user)))]
 async fn post_index(
-    user: Option<FediverseUser>,
+    user: Result<FediverseUser, ()>,
     Language(language): Language,
     Form(req): Form<PostIndexReq>,
-) -> Result<IndexLoginTemplate, Result<Redirect, IndexLogoutTemplate>> {
+) -> Result<Html<String>, Redirect> {
     match (user, req) {
         (_, PostIndexReq::Login { domain }) => {
             if domain.is_empty() {
-                return Err(Err(IndexLogoutTemplate {
-                    domain,
-                    domain_error: Some(TemplateError {
-                        summary: t(&language, "value-cannot-empty"),
-                        detail: None,
-                    }),
-                    language,
-                }));
+                return Ok(Html(
+                    IndexLogoutTemplate {
+                        domain,
+                        domain_error: Some(TemplateError {
+                            summary: t(&language, "value-cannot-empty"),
+                            detail: None,
+                        }),
+                        language,
+                    }
+                    .render()
+                    .unwrap(),
+                ));
             }
 
             match get_auth_redirect_url(&domain).await {
-                Ok(redirect_url) => Err(Ok(Redirect::to(redirect_url.as_str()))),
+                Ok(redirect_url) => Err(Redirect::to(redirect_url.as_str())),
                 Err(error) => {
                     tracing::warn!(?error, "failed to get auth redirect URL");
-                    Err(Err(IndexLogoutTemplate {
-                        domain,
-                        domain_error: Some(TemplateError {
-                            summary: t(&language, "login-error"),
-                            detail: Some(format!("{error:?}")),
-                        }),
-                        language,
-                    }))
+                    Ok(Html(
+                        IndexLogoutTemplate {
+                            domain,
+                            domain_error: Some(TemplateError {
+                                summary: t(&language, "login-error"),
+                                detail: Some(format!("{error:?}")),
+                            }),
+                            language,
+                        }
+                        .render()
+                        .unwrap(),
+                    ))
                 }
             }
         }
-        (Some(user), PostIndexReq::AddQuote(req)) => {
+        (Ok(user), PostIndexReq::AddQuote(req)) => {
             if req.is_empty() {
                 let quotes = load_quotes(&user.domain, &user.handle)
                     .await
@@ -201,22 +219,26 @@ async fn post_index(
                             (String::new(), 0, false)
                         });
 
-                Ok(IndexLoginTemplate {
-                    user,
-                    quotes,
-                    is_bulk_selected: req.is_bulk(),
-                    quote_input: req.as_one_by_one(),
-                    quote_bulk_input: req.as_bulk(),
-                    quote_error: Some(TemplateError {
-                        summary: t(&language, "value-cannot-empty"),
-                        detail: None,
-                    }),
-                    cron_input,
-                    cron_error: None,
-                    dedup_duration_minutes,
-                    suspend_schedule,
-                    language,
-                })
+                Ok(Html(
+                    IndexLoginTemplate {
+                        user,
+                        quotes,
+                        is_bulk_selected: req.is_bulk(),
+                        quote_input: req.as_one_by_one(),
+                        quote_bulk_input: req.as_bulk(),
+                        quote_error: Some(TemplateError {
+                            summary: t(&language, "value-cannot-empty"),
+                            detail: None,
+                        }),
+                        cron_input,
+                        cron_error: None,
+                        dedup_duration_minutes,
+                        suspend_schedule,
+                        language,
+                    }
+                    .render()
+                    .unwrap(),
+                ))
             } else {
                 let quotes = match &req {
                     AddQuote::OneByOne { quote } => vec![quote.trim().to_string()],
@@ -235,43 +257,51 @@ async fn post_index(
                         });
 
                 match add_quotes(&user.domain, &user.handle, quotes).await {
-                    Ok(quotes) => Ok(IndexLoginTemplate {
-                        user,
-                        quotes,
-                        is_bulk_selected: req.is_bulk(),
-                        quote_input: String::new(),
-                        quote_bulk_input: String::new(),
-                        quote_error: None,
-                        cron_input,
-                        cron_error: None,
-                        dedup_duration_minutes,
-                        suspend_schedule,
-                        language,
-                    }),
-                    Err(error) => {
-                        tracing::warn!(?error, "failed to add quotes");
-                        Ok(IndexLoginTemplate {
+                    Ok(quotes) => Ok(Html(
+                        IndexLoginTemplate {
                             user,
-                            quotes: Vec::new(),
+                            quotes,
                             is_bulk_selected: req.is_bulk(),
-                            quote_input: req.as_one_by_one(),
-                            quote_bulk_input: req.as_bulk(),
-                            quote_error: Some(TemplateError {
-                                summary: t(&language, "add-quote-error"),
-                                detail: Some(format!("{error:?}")),
-                            }),
+                            quote_input: String::new(),
+                            quote_bulk_input: String::new(),
+                            quote_error: None,
                             cron_input,
                             cron_error: None,
                             dedup_duration_minutes,
                             suspend_schedule,
                             language,
-                        })
+                        }
+                        .render()
+                        .unwrap(),
+                    )),
+                    Err(error) => {
+                        tracing::warn!(?error, "failed to add quotes");
+                        Ok(Html(
+                            IndexLoginTemplate {
+                                user,
+                                quotes: Vec::new(),
+                                is_bulk_selected: req.is_bulk(),
+                                quote_input: req.as_one_by_one(),
+                                quote_bulk_input: req.as_bulk(),
+                                quote_error: Some(TemplateError {
+                                    summary: t(&language, "add-quote-error"),
+                                    detail: Some(format!("{error:?}")),
+                                }),
+                                cron_input,
+                                cron_error: None,
+                                dedup_duration_minutes,
+                                suspend_schedule,
+                                language,
+                            }
+                            .render()
+                            .unwrap(),
+                        ))
                     }
                 }
             }
         }
         (
-            Some(user),
+            Ok(user),
             PostIndexReq::ConfigureSchedule {
                 cron,
                 suspend,
@@ -288,22 +318,26 @@ async fn post_index(
                 });
 
             if cron.is_empty() {
-                return Ok(IndexLoginTemplate {
-                    user,
-                    quotes,
-                    is_bulk_selected: false,
-                    quote_input: String::new(),
-                    quote_bulk_input: String::new(),
-                    quote_error: None,
-                    cron_input: String::new(),
-                    cron_error: Some(TemplateError {
-                        summary: t(&language, "value-cannot-empty"),
-                        detail: None,
-                    }),
-                    dedup_duration_minutes,
-                    suspend_schedule: suspend,
-                    language,
-                });
+                return Ok(Html(
+                    IndexLoginTemplate {
+                        user,
+                        quotes,
+                        is_bulk_selected: false,
+                        quote_input: String::new(),
+                        quote_bulk_input: String::new(),
+                        quote_error: None,
+                        cron_input: String::new(),
+                        cron_error: Some(TemplateError {
+                            summary: t(&language, "value-cannot-empty"),
+                            detail: None,
+                        }),
+                        dedup_duration_minutes,
+                        suspend_schedule: suspend,
+                        language,
+                    }
+                    .render()
+                    .unwrap(),
+                ));
             }
 
             match save_cronjob(
@@ -317,22 +351,8 @@ async fn post_index(
             )
             .await
             {
-                Ok(()) => Ok(IndexLoginTemplate {
-                    user,
-                    quotes,
-                    is_bulk_selected: false,
-                    quote_input: String::new(),
-                    quote_bulk_input: String::new(),
-                    quote_error: None,
-                    cron_input: cron,
-                    cron_error: None,
-                    dedup_duration_minutes,
-                    suspend_schedule: suspend,
-                    language,
-                }),
-                Err(error) => {
-                    tracing::warn!(?error, "failed to save cronjob");
-                    Ok(IndexLoginTemplate {
+                Ok(()) => Ok(Html(
+                    IndexLoginTemplate {
                         user,
                         quotes,
                         is_bulk_selected: false,
@@ -340,18 +360,40 @@ async fn post_index(
                         quote_bulk_input: String::new(),
                         quote_error: None,
                         cron_input: cron,
-                        cron_error: Some(TemplateError {
-                            summary: t(&language, "configure-schedule-error"),
-                            detail: Some(format!("{error:?}")),
-                        }),
+                        cron_error: None,
                         dedup_duration_minutes,
                         suspend_schedule: suspend,
                         language,
-                    })
+                    }
+                    .render()
+                    .unwrap(),
+                )),
+                Err(error) => {
+                    tracing::warn!(?error, "failed to save cronjob");
+                    Ok(Html(
+                        IndexLoginTemplate {
+                            user,
+                            quotes,
+                            is_bulk_selected: false,
+                            quote_input: String::new(),
+                            quote_bulk_input: String::new(),
+                            quote_error: None,
+                            cron_input: cron,
+                            cron_error: Some(TemplateError {
+                                summary: t(&language, "configure-schedule-error"),
+                                detail: Some(format!("{error:?}")),
+                            }),
+                            dedup_duration_minutes,
+                            suspend_schedule: suspend,
+                            language,
+                        }
+                        .render()
+                        .unwrap(),
+                    ))
                 }
             }
         }
-        (Some(user), PostIndexReq::DeleteQuote { quote_id }) => {
+        (Ok(user), PostIndexReq::DeleteQuote { quote_id }) => {
             let quotes = delete_quote(&user.domain, &user.handle, &quote_id)
                 .await
                 .unwrap_or_else(|error| {
@@ -366,24 +408,32 @@ async fn post_index(
                         (String::new(), 0, false)
                     });
 
-            Ok(IndexLoginTemplate {
-                user,
-                quotes,
-                is_bulk_selected: false,
-                quote_input: String::new(),
-                quote_bulk_input: String::new(),
-                quote_error: None,
-                cron_input,
-                cron_error: None,
-                dedup_duration_minutes,
-                suspend_schedule,
-                language,
-            })
+            Ok(Html(
+                IndexLoginTemplate {
+                    user,
+                    quotes,
+                    is_bulk_selected: false,
+                    quote_input: String::new(),
+                    quote_bulk_input: String::new(),
+                    quote_error: None,
+                    cron_input,
+                    cron_error: None,
+                    dedup_duration_minutes,
+                    suspend_schedule,
+                    language,
+                }
+                .render()
+                .unwrap(),
+            ))
         }
-        _ => Err(Err(IndexLogoutTemplate {
-            language,
-            domain: String::new(),
-            domain_error: None,
-        })),
+        _ => Ok(Html(
+            IndexLogoutTemplate {
+                language,
+                domain: String::new(),
+                domain_error: None,
+            }
+            .render()
+            .unwrap(),
+        )),
     }
 }

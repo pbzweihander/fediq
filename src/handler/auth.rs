@@ -1,12 +1,12 @@
 use std::fmt;
 
-use async_trait::async_trait;
+use askama::Template;
 use axum::{
     extract::{FromRequestParts, Path, Query},
-    headers,
     response::{IntoResponseParts, Redirect},
-    routing, RequestPartsExt, Router, TypedHeader,
+    routing, RequestPartsExt, Router,
 };
+use axum_extra::{headers, TypedHeader};
 use http::{header, HeaderName, HeaderValue, StatusCode};
 use serde::{Deserialize, Serialize};
 use time::{Duration, OffsetDateTime};
@@ -71,7 +71,6 @@ impl FediverseUser {
     }
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for FediverseUser
 where
     S: Send + Sync,
@@ -151,13 +150,15 @@ async fn get_callback_mastodon(
     Language(language): Language,
     Query(query): Query<MastodonCallbackQuery>,
     Path(domain): Path<String>,
-) -> Result<(FediverseUser, Redirect), AuthFailedTemplate> {
+) -> Result<(FediverseUser, Redirect), String> {
     match login_mastodon(&domain, &query.code).await {
         Ok(user) => Ok((user, Redirect::to("/"))),
         Err(error) => Err(AuthFailedTemplate {
             language,
             error: format!("{error:?}"),
-        }),
+        }
+        .render()
+        .unwrap()),
     }
 }
 
@@ -170,12 +171,14 @@ async fn get_callback_misskey(
     Language(language): Language,
     Query(query): Query<MisskeyCallbackQuery>,
     Path(domain): Path<String>,
-) -> Result<(FediverseUser, Redirect), AuthFailedTemplate> {
+) -> Result<(FediverseUser, Redirect), String> {
     match login_misskey(&domain, &query.token).await {
         Ok(user) => Ok((user, Redirect::to("/"))),
         Err(error) => Err(AuthFailedTemplate {
             language,
             error: format!("{error:?}"),
-        }),
+        }
+        .render()
+        .unwrap()),
     }
 }

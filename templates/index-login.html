@@ -1,5 +1,6 @@
-{% extends "index.html" %} {% block navbar %} {% if let Some(avatar_url) =
-user.avatar_url %}
+{% extends "index.html" %}
+{% block navbar %}
+{% if let Some(avatar_url) = user.avatar_url %}
 <div class="avatar mr-4">
   <div class="w-10 rounded-full">
     <img src="{{ avatar_url }}" />
@@ -8,88 +9,49 @@ user.avatar_url %}
 {% endif %}
 <span class="mr-4">{{ user.display_name() }}</span>
 <a class="indicator-item mr-5 rounded-full bg-error p-1" href="/auth/logout">
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke-width="1.5"
-    stroke="currentColor"
-    class="h-6 w-6"
-  >
-    <path
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"
-    />
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"
+    class="h-6 w-6">
+    <path stroke-linecap="round" stroke-linejoin="round"
+      d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
   </svg>
 </a>
-{% endblock %} {% block content %}
+{% endblock %}
+{% block content %}
 <h2 class="mb-2 text-xl font-bold">{{ language|t("add-quote") }}</h2>
 <form class="form-control" method="post">
   <input type="hidden" name="type" value="add_quote" />
   <div role="tablist" class="tabs tabs-bordered">
     {% let t_add_one_by_one = self::t(language, "add-one-by-one") %}
-    <input
-      type="radio"
-      class="tab"
-      name="add_quote_mode"
-      value="one_by_one"
-      aria-label="{{ t_add_one_by_one }}"
-      {%
-      if
-      !is_bulk_selected
-      %}
-      checked
-      {%
-      endif
-      %}
-    />
+    <input type="radio" class="tab" name="add_quote_mode" value="one_by_one" aria-label="{{ t_add_one_by_one }}" {% if
+      !is_bulk_selected %} checked {% endif %} />
     <div role="tabpanel" class="tab-content pt-2">
       <label class="label label-text">
         {{ language|t("add-quote-one-by-one-guide") }}
       </label>
-      <textarea
-        class="w-full{% if quote_error.is_some() %} textarea-error{% endif %} textarea textarea-bordered"
-        name="quote"
-        value="{{ quote_input }}"
-      ></textarea>
+      <textarea class="w-full{% if quote_error.is_some() %} textarea-error{% endif %} textarea textarea-bordered"
+        name="quote" value="{{ quote_input }}"></textarea>
     </div>
     {% let t_add_bulk = self::t(language, "add-bulk") %}
-    <input
-      type="radio"
-      class="tab"
-      name="add_quote_mode"
-      value="bulk"
-      aria-label="{{ t_add_bulk }}"
-      {%
-      if
-      is_bulk_selected
-      %}
-      checked
-      {%
-      endif
-      %}
-    />
+    <input type="radio" class="tab" name="add_quote_mode" value="bulk" aria-label="{{ t_add_bulk }}" {% if
+      is_bulk_selected %} checked {% endif %} />
     <div role="tabpanel" class="tab-content pt-2">
       <label class="label label-text">
         {{ language|t("add-quote-bulk-guide") }}
       </label>
-      <textarea
-        class="w-full{% if quote_error.is_some() %} textarea-error{% endif %} textarea textarea-bordered"
-        name="quote_bulk"
-        value="{{ quote_bulk_input }}"
-      ></textarea>
+      <textarea class="w-full{% if quote_error.is_some() %} textarea-error{% endif %} textarea textarea-bordered"
+        name="quote_bulk" value="{{ quote_bulk_input }}"></textarea>
     </div>
   </div>
-  {% if let Some(error) = quote_error %} {% if let Some(detail) = error.detail
-  %}
+  {% if let Some(error) = quote_error %} {% if let Some(detail) = error.detail %}
   <details class="label label-text-alt text-error">
     <summary>{{ error.summary }}</summary>
     <p class="m-2.5 whitespace-pre-wrap font-mono">{{- detail -}}</p>
   </details>
   {% else %}
-  <label class="label label-text-alt text-error"> {{ error.summary }} </label>
-  {% endif %} {% endif %} {% let t_add_quote = self::t(language, "add-quote") %}
+  <label class="label label-text-alt text-error">{{ error.summary }}</label>
+  {% endif %}
+  {% endif %}
+  {% let t_add_quote = self::t(language, "add-quote") %}
   <input type="submit" class="btn btn-primary mt-5" value="{{ t_add_quote }}" />
 </form>
 <div class="divider"></div>
@@ -97,21 +59,16 @@ user.avatar_url %}
 <form class="form-control" method="post">
   <input type="hidden" name="type" value="configure_schedule" />
   <label class="label label-text">{{ language|t("cron-expression") }}</label>
-  <input
-    type="text"
-    class="input-bordered{% if cron_error.is_some() %} input-error{% endif %} input"
-    name="cron"
-    placeholder="0 0 * * *"
-    value="{{ cron_input }}"
-    required
-  />
-  {% if let Some(error) = cron_error %} {% if let Some(detail) = error.detail %}
+  <input type="text" class="input-bordered{% if cron_error.is_some() %} input-error{% endif %} input" name="cron"
+    placeholder="0 0 * * *" value="{{ cron_input }}" required />
+  {% if let Some(error) = cron_error %}
+  {% if let Some(detail) = error.detail %}
   <details class="label label-text-alt text-error">
     <summary>{{ error.summary }}</summary>
     <p class="m-2.5 whitespace-pre-wrap font-mono">{{- detail -}}</p>
   </details>
   {% else %}
-  <label class="label label-text-alt text-error"> {{ error.summary }} </label>
+  <label class="label label-text-alt text-error">{{ error.summary }}</label>
   {% endif %} {% endif %}
   <details class="label">
     <summary class="label-text">
@@ -122,22 +79,12 @@ user.avatar_url %}
       <p>{{ language|t("useful-links") }}:</p>
       <ul class="mb-2 list-inside list-disc">
         <li>
-          <a
-            class="link"
-            href="https://en.wikipedia.org/wiki/Cron"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+          <a class="link" href="https://en.wikipedia.org/wiki/Cron" target="_blank" rel="noopener noreferrer">
             Wikipedia
           </a>
         </li>
         <li>
-          <a
-            class="link"
-            href="https://crontab.guru/"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
+          <a class="link" href="https://crontab.guru/" target="_blank" rel="noopener noreferrer">
             crontab.guru
           </a>
         </li>
@@ -190,45 +137,25 @@ user.avatar_url %}
     {{ language|t("dedup-duration-minutes") }}
   </label>
   <div class="join">
-    <input
-      type="number"
-      class="input join-item input-bordered flex-1"
-      name="dedup_duration_minutes"
-      placeholder="1"
-      min="0"
-      value="{{ dedup_duration_minutes }}"
-    />
+    <input type="number" class="input join-item input-bordered flex-1" name="dedup_duration_minutes" placeholder="1"
+      min="0" value="{{ dedup_duration_minutes }}" />
     <label class="label join-item bg-base-200 px-2">
       {{ language|t("minutes") }}
     </label>
   </div>
   <label class="label cursor-pointer">
     <span class="label-text">{{ language|t("suspend") }}</span>
-    <input
-      type="checkbox"
-      class="toggle toggle-warning"
-      name="suspend"
-      {%
-      if
-      suspend_schedule%}
-      checked
-      {%
-      endif
-      %}
-    />
+    <input type="checkbox" class="toggle toggle-warning" name="suspend" {% if suspend_schedule%} checked {% endif %} />
   </label>
   {% let t_configure_schedule = self::t(language, "configure-schedule") %}
-  <input
-    type="submit"
-    class="btn btn-primary mt-5"
-    value="{{ t_configure_schedule }}"
-  />
+  <input type="submit" class="btn btn-primary mt-5" value="{{ t_configure_schedule }}" />
 </form>
 <div class="divider"></div>
 <h2 class="mb-2 text-xl font-bold">{{ language|t("quote-list") }}</h2>
 {% if quotes.is_empty() %}
 <div class="text-neutral-content">{{ language|t("empty") }}</div>
-{% else %} {% for (id, quote, sent_recently) in quotes.iter().rev() %}
+{% else %}
+{% for (id, quote, sent_recently) in quotes.iter().rev() %}
 <div class="chat chat-start py-2">
   {% if let Some(avatar_url) = user.avatar_url %}
   <div class="avatar chat-image">
@@ -243,15 +170,9 @@ user.avatar_url %}
       <input type="hidden" name="quote_id" value="{{ id }}" />
       <label class="cursor-pointer">
         <input type="submit" class="hidden" value="" />
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-          class="h-5 w-5"
-        >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5">
           <path
-            d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
-          />
+            d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
         </svg>
       </label>
     </form>
@@ -261,4 +182,6 @@ user.avatar_url %}
   <div class="chat-footer opacity-50">{{ language|t("sent-recently") }}</div>
   {% endif %}
 </div>
-{% endfor %} {% endif %} {% endblock %}
+{% endfor %}
+{% endif %}
+{% endblock %}

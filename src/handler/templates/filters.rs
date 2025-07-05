@@ -1,11 +1,11 @@
-use fluent_templates::{LanguageIdentifier, Loader};
+use fluent_templates::LanguageIdentifier;
 
-use crate::internationalization::LOCALES;
-
-pub fn t(language: &LanguageIdentifier, text_id: &str) -> askama::Result<String> {
-    Ok(LOCALES
-        .lookup(language, text_id)
-        .unwrap_or_else(|| format!("t({})", text_id)))
+pub fn t(
+    language: &LanguageIdentifier,
+    _: &dyn askama::Values,
+    text_id: &str,
+) -> askama::Result<String> {
+    Ok(super::t(language, text_id))
 }
 
 // pub fn ta<'a>(

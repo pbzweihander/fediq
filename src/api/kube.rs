@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
-use anyhow::Context;
 use async_once_cell::OnceCell;
 use base64::Engine;
+use eyre::Context;
 use k8s_openapi::{
     api::{
         batch::v1::{CronJob, CronJobSpec, JobSpec, JobTemplateSpec},
@@ -24,7 +24,7 @@ use super::fediverse::FediverseApp;
 
 const DEDUP_DURATION_MINUTES_ANNOTATION_KEY: &str = "fediq.pbzweihander.dev/dedup-duration-minutes";
 
-async fn client() -> anyhow::Result<kube::Client> {
+async fn client() -> eyre::Result<kube::Client> {
     static CLIENT: OnceCell<kube::Client> = OnceCell::new();
     CLIENT
         .get_or_try_init(kube::Client::try_default())
@@ -57,7 +57,7 @@ fn poster_cronjob_name(domain: &str, handle: &str) -> String {
         .replace('_', "-")
 }
 
-pub async fn load_fediverse_app(domain: &str) -> anyhow::Result<Option<FediverseApp>> {
+pub async fn load_fediverse_app(domain: &str) -> eyre::Result<Option<FediverseApp>> {
     let client = client().await?;
     let secret_api = Api::<Secret>::default_namespaced(client);
     let secret = secret_api
@@ -97,7 +97,7 @@ pub async fn load_fediverse_app(domain: &str) -> anyhow::Result<Option<Fediverse
     }))
 }
 
-pub async fn save_fediverse_app(domain: &str, app: &FediverseApp) -> anyhow::Result<()> {
+pub async fn save_fediverse_app(domain: &str, app: &FediverseApp) -> eyre::Result<()> {
     let client = client().await?;
     let secret_api = Api::<Secret>::default_namespaced(client);
 
@@ -160,7 +160,7 @@ fn quote_map_to_vec(
     quotes
 }
 
-pub async fn load_quotes(domain: &str, handle: &str) -> anyhow::Result<Vec<(Ulid, String, bool)>> {
+pub async fn load_quotes(domain: &str, handle: &str) -> eyre::Result<Vec<(Ulid, String, bool)>> {
     let client = client().await?;
     let configmap_api = Api::<ConfigMap>::default_namespaced(client);
 
@@ -201,7 +201,7 @@ pub async fn add_quotes(
     domain: &str,
     handle: &str,
     quotes: Vec<String>,
-) -> anyhow::Result<Vec<(Ulid, String, bool)>> {
+) -> eyre::Result<Vec<(Ulid, String, bool)>> {
     let client = client().await?;
     let configmap_api = Api::<ConfigMap>::default_namespaced(client);
 
@@ -260,7 +260,7 @@ pub async fn delete_quote(
     domain: &str,
     handle: &str,
     id: &Ulid,
-) -> anyhow::Result<Vec<(Ulid, String, bool)>> {
+) -> eyre::Result<Vec<(Ulid, String, bool)>> {
     let client = client().await?;
     let configmap_api = Api::<ConfigMap>::default_namespaced(client);
 
@@ -311,7 +311,7 @@ pub async fn delete_quote(
     Ok(quotes)
 }
 
-pub async fn load_cronjob(domain: &str, handle: &str) -> anyhow::Result<(String, u32, bool)> {
+pub async fn load_cronjob(domain: &str, handle: &str) -> eyre::Result<(String, u32, bool)> {
     let client = client().await?;
     let cronjob_api = Api::<CronJob>::default_namespaced(client);
 
@@ -350,7 +350,7 @@ pub async fn save_cronjob(
     cron: &str,
     dedup_duration_minutes: u32,
     suspend: bool,
-) -> anyhow::Result<()> {
+) -> eyre::Result<()> {
     let client = client().await?;
     let cronjob_api = Api::<CronJob>::default_namespaced(client);
 

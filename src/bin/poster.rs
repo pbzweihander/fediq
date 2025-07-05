@@ -1,4 +1,4 @@
-use anyhow::Context;
+use eyre::Context;
 use http::HeaderMap;
 use k8s_openapi::api::core::v1::ConfigMap;
 use kube::{
@@ -43,7 +43,7 @@ struct PostMastodonReq<'a> {
     visibility: &'a str,
 }
 
-async fn post_mastodon(domain: &str, access_token: &str, quote: &str) -> anyhow::Result<()> {
+async fn post_mastodon(domain: &str, access_token: &str, quote: &str) -> eyre::Result<()> {
     let req = PostMastodonReq {
         status: quote,
         visibility: "unlisted",
@@ -62,7 +62,7 @@ async fn post_mastodon(domain: &str, access_token: &str, quote: &str) -> anyhow:
         .await
         .with_context(|| format!("failed to read response from `{url}`"))?;
     if !resp_status.is_success() {
-        Err(anyhow::anyhow!("error response received: `{resp_text}`"))
+        Err(eyre::eyre!("error response received: `{resp_text}`"))
     } else {
         Ok(())
     }
@@ -75,7 +75,7 @@ struct PostMisskeyReq<'a> {
     visibility: &'a str,
 }
 
-async fn post_misskey(domain: &str, access_token: &str, quote: &str) -> anyhow::Result<()> {
+async fn post_misskey(domain: &str, access_token: &str, quote: &str) -> eyre::Result<()> {
     let req = PostMisskeyReq {
         i: access_token,
         text: quote,
@@ -94,17 +94,16 @@ async fn post_misskey(domain: &str, access_token: &str, quote: &str) -> anyhow::
         .await
         .with_context(|| format!("failed to read response from `{url}`"))?;
     if !resp_status.is_success() {
-        Err(anyhow::anyhow!("error response received: `{resp_text}`"))
+        Err(eyre::eyre!("error response received: `{resp_text}`"))
     } else {
         Ok(())
     }
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> eyre::Result<()> {
     let now = OffsetDateTime::now_utc();
-    let mut rng = rand::thread_rng();
-
+    let mut rng = rand::rng();
     let config =
         envy::from_env::<Config>().context("failed to parse config from environment variables")?;
 
@@ -175,7 +174,7 @@ async fn main() -> anyhow::Result<()> {
             .await
             .with_context(|| format!("failed to post to Misskey `{}`", config.domain))?,
         software => {
-            return Err(anyhow::anyhow!("unsupported software `{}`", software));
+            return Err(eyre::eyre!("unsupported software `{}`", software));
         }
     }
 

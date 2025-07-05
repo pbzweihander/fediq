@@ -1,6 +1,6 @@
 use std::{str::FromStr, time::Duration};
 
-use anyhow::Context;
+use eyre::{Context, OptionExt};
 use http::HeaderMap;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -53,7 +53,7 @@ struct WellKnownNodeInfo {
     links: Vec<WellKnownNodeInfoLink>,
 }
 
-pub async fn get_software_name(domain: &str) -> anyhow::Result<String> {
+pub async fn get_software_name(domain: &str) -> eyre::Result<String> {
     let url = format!("https://{domain}/.well-known/nodeinfo");
     let resp_text = HTTP_CLIENT
         .get(&url)
@@ -69,7 +69,7 @@ pub async fn get_software_name(domain: &str) -> anyhow::Result<String> {
         .links
         .into_iter()
         .find(|link| link.rel == "http://nodeinfo.diaspora.software/ns/schema/2.0")
-        .with_context(|| format!("nodeinfo link not found from response `{}`", resp_text))?
+        .ok_or_else(|| eyre::eyre!("nodeinfo link not found from response `{}`", resp_text))?
         .href;
 
     let resp_text = HTTP_CLIENT
@@ -100,7 +100,7 @@ struct MastodonCreateAppResp {
     client_secret: String,
 }
 
-async fn get_auth_redirect_url_mastodon(domain: &str) -> anyhow::Result<Url> {
+async fn get_auth_redirect_url_mastodon(domain: &str) -> eyre::Result<Url> {
     let redirect_url = CONFIG
         .public_url
         .join(&format!("./auth/callback/mastodon/{domain}"))
@@ -173,7 +173,7 @@ struct MisskeyGenerateSessionResp {
     url: Url,
 }
 
-async fn get_auth_redirect_url_misskey(domain: &str) -> anyhow::Result<Url> {
+async fn get_auth_redirect_url_misskey(domain: &str) -> eyre::Result<Url> {
     let app = if let Some(app) = load_fediverse_app(domain)
         .await
         .context("failed to load fediverse app from Kubernetes")?
@@ -231,13 +231,13 @@ async fn get_auth_redirect_url_misskey(domain: &str) -> anyhow::Result<Url> {
     Ok(resp.url)
 }
 
-pub async fn get_auth_redirect_url(domain: &str) -> anyhow::Result<Url> {
+pub async fn get_auth_redirect_url(domain: &str) -> eyre::Result<Url> {
     let software_name = get_software_name(domain).await?;
 
     match software_name.as_str() {
         "mastodon" => get_auth_redirect_url_mastodon(domain).await,
         "misskey" | "cherrypick" | "firefish" => get_auth_redirect_url_misskey(domain).await,
-        name => Err(anyhow::anyhow!("unsupported software `{}`", name)),
+        name => Err(eyre::eyre!("unsupported software `{}`", name)),
     }
 }
 
@@ -272,11 +272,11 @@ struct MastodonAccount {
     avatar: Option<Url>,
 }
 
-pub async fn login_mastodon(domain: &str, code: &str) -> anyhow::Result<FediverseUser> {
+pub async fn login_mastodon(domain: &str, code: &str) -> eyre::Result<FediverseUser> {
     let app = load_fediverse_app(domain)
         .await
         .context("failed to load fediverse app from Kubernetes")?
-        .context("fediverse app not found in Kubernetes")?;
+        .ok_or_eyre("fediverse app not found in Kubernetes")?;
 
     let redirect_url = CONFIG
         .public_url
@@ -345,11 +345,11 @@ struct MisskeySessionUserKeyResp {
     user: MisskeyUser,
 }
 
-pub async fn login_misskey(domain: &str, token: &str) -> anyhow::Result<FediverseUser> {
+pub async fn login_misskey(domain: &str, token: &str) -> eyre::Result<FediverseUser> {
     let app = load_fediverse_app(domain)
         .await
         .context("failed to load fediverse app from Kubernetes")?
-        .context("fediverse app not found in Kubernetes")?;
+        .ok_or_eyre("fediverse app not found in Kubernetes")?;
 
     let req = MisskeySessionUserKeyReq {
         app_secret: &app.client_secret,

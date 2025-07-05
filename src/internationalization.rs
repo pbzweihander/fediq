@@ -8,7 +8,5 @@ fluent_templates::static_loader! {
 }
 
 pub fn t(lang: &LanguageIdentifier, text_id: &str) -> String {
-    LOCALES
-        .lookup(lang, text_id)
-        .unwrap_or_else(|| format!("t({})", text_id))
+    LOCALES.lookup(lang, text_id)
 }

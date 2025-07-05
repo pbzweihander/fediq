@@ -1,6 +1,5 @@
 use std::str::FromStr;
 
-use async_trait::async_trait;
 use axum::{extract::FromRequestParts, http::request::Parts};
 use fluent_templates::LanguageIdentifier;
 use serde::Deserialize;
@@ -12,7 +11,6 @@ struct LanguageQuery {
     lang: String,
 }
 
-#[async_trait]
 impl<S> FromRequestParts<S> for Language
 where
     S: Send + Sync,
