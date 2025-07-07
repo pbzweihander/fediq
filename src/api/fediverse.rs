@@ -195,7 +195,7 @@ async fn get_auth_redirect_url_misskey(domain: &str) -> eyre::Result<Url> {
                 "fediq.pbzweihander.dev"
             },
             description: CONFIG.public_url.to_string(),
-            permission: &["write:notes"],
+            permission: &["read:account", "write:notes", "read:notifications"],
             callback_url: redirect_url,
         };
         let url = format!("https://{domain}/api/app/create");
@@ -296,7 +296,7 @@ pub async fn login_mastodon(domain: &str, code: &str) -> eyre::Result<FediverseU
         client_id: &app.client_id,
         client_secret: &app.client_secret,
         redirect_uri: &redirect_url,
-        scope: "read:accounts write:statuses",
+        scope: "read:accounts read:statuses read:notifications write:statuses",
     };
     let url = format!("https://{domain}/oauth/token");
     let resp_text = HTTP_CLIENT

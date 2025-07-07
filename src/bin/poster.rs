@@ -1,15 +1,16 @@
-use eyre::Context;
-use http::HeaderMap;
+#[path = "lib/post.rs"]
+mod post;
+
 use k8s_openapi::api::core::v1::ConfigMap;
 use kube::{
     api::{Patch, PatchParams},
     core::ObjectMeta,
     Api,
 };
-use once_cell::sync::Lazy;
 use rand::seq::IteratorRandom;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use time::{Duration, OffsetDateTime};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use ulid::Ulid;
 
 #[derive(Deserialize)]
@@ -22,122 +23,40 @@ struct Config {
     dedup_duration_minutes: u32,
 }
 
-static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        "user-agent",
-        "fediq.pbzweihander.dev"
-            .parse()
-            .expect("failed to parse header value"),
-    );
-    reqwest::Client::builder()
-        .default_headers(headers)
-        .timeout(std::time::Duration::from_secs(5))
-        .build()
-        .expect("failed to build HTTP client")
-});
-
-#[derive(Serialize)]
-struct PostMastodonReq<'a> {
-    status: &'a str,
-    visibility: &'a str,
-}
-
-async fn post_mastodon(domain: &str, access_token: &str, quote: &str) -> eyre::Result<()> {
-    let req = PostMastodonReq {
-        status: quote,
-        visibility: "unlisted",
-    };
-    let url = format!("https://{domain}/api/v1/statuses");
-    let resp = HTTP_CLIENT
-        .post(&url)
-        .bearer_auth(access_token)
-        .json(&req)
-        .send()
-        .await
-        .with_context(|| format!("failed to request to `{url}`"))?;
-    let resp_status = resp.status();
-    let resp_text = resp
-        .text()
-        .await
-        .with_context(|| format!("failed to read response from `{url}`"))?;
-    if !resp_status.is_success() {
-        Err(eyre::eyre!("error response received: `{resp_text}`"))
-    } else {
-        Ok(())
-    }
-}
-
-#[derive(Serialize)]
-struct PostMisskeyReq<'a> {
-    i: &'a str,
-    text: &'a str,
-    visibility: &'a str,
-}
-
-async fn post_misskey(domain: &str, access_token: &str, quote: &str) -> eyre::Result<()> {
-    let req = PostMisskeyReq {
-        i: access_token,
-        text: quote,
-        visibility: "home",
-    };
-    let url = format!("https://{domain}/api/notes/create");
-    let resp = HTTP_CLIENT
-        .post(&url)
-        .json(&req)
-        .send()
-        .await
-        .with_context(|| format!("failed to request to `{url}`"))?;
-    let resp_status = resp.status();
-    let resp_text = resp
-        .text()
-        .await
-        .with_context(|| format!("failed to read response from `{url}`"))?;
-    if !resp_status.is_success() {
-        Err(eyre::eyre!("error response received: `{resp_text}`"))
-    } else {
-        Ok(())
-    }
-}
-
 #[tokio::main]
-async fn main() -> eyre::Result<()> {
+async fn main() {
+    color_eyre::install().expect("failed to install color-eyre");
+
+    tracing_subscriber::registry()
+        .with(tracing_error::ErrorLayer::default())
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
     let now = OffsetDateTime::now_utc();
     let mut rng = rand::rng();
     let config =
-        envy::from_env::<Config>().context("failed to parse config from environment variables")?;
+        envy::from_env::<Config>().expect("failed to parse config from environment variables");
 
     let kube_client = kube::Client::try_default()
         .await
-        .context("failed to initialize Kubernetes client")?;
+        .expect("failed to initialize Kubernetes client");
 
     let configmap_api = Api::<ConfigMap>::default_namespaced(kube_client);
 
-    let quotes_configmap = configmap_api
-        .get_opt(&config.quotes_configmap_name)
+    let quotes_configmap_data = configmap_api
+        .get(&config.quotes_configmap_name)
         .await
-        .with_context(|| {
-            format!(
-                "failed to get quotes Kubernetes ConfigMap `{}`",
-                config.quotes_configmap_name
-            )
-        })?;
-    let Some(quotes_configmap) = quotes_configmap else {
-        return Ok(());
-    };
-    let Some(quotes_configmap_data) = quotes_configmap.data else {
-        return Ok(());
-    };
+        .expect("failed to get quotes Kubernetes ConfigMap")
+        .data
+        .unwrap_or_default();
 
     let quote_dedup_configmap = configmap_api
         .get_opt(&config.quote_dedup_configmap_name)
         .await
-        .with_context(|| {
-            format!(
-                "failed to get quote dedup Kubernetes ConfigMap `{}`",
-                config.quote_dedup_configmap_name
-            )
-        })?;
+        .expect("failed to get quote dedup Kubernetes ConfigMap");
     let mut quote_dedup_configmap_data = quote_dedup_configmap
         .and_then(|cm| cm.data)
         .unwrap_or_default();
@@ -163,18 +82,18 @@ async fn main() -> eyre::Result<()> {
 
     let quote = quotes.choose(&mut rng);
     let Some((quote_id, quote)) = quote else {
-        return Ok(());
+        return;
     };
 
     match config.software.as_str() {
-        "mastodon" => post_mastodon(&config.domain, &config.access_token, &quote)
+        "mastodon" => post::post_mastodon(&config.domain, &config.access_token, &quote)
             .await
-            .with_context(|| format!("failed to post to Mastodon `{}`", config.domain))?,
-        "misskey" => post_misskey(&config.domain, &config.access_token, &quote)
+            .expect("failed to post to Mastodon"),
+        "misskey" => post::post_misskey(&config.domain, &config.access_token, &quote, None)
             .await
-            .with_context(|| format!("failed to post to Misskey `{}`", config.domain))?,
+            .expect("failed to post to Misskey"),
         software => {
-            return Err(eyre::eyre!("unsupported software `{}`", software));
+            panic!("unsupported software `{software}`");
         }
     }
 
@@ -183,7 +102,7 @@ async fn main() -> eyre::Result<()> {
         quote_id.to_string(),
         dedup_timestamp
             .format(&time::format_description::well_known::Rfc3339)
-            .context("failed to format OffsetDateTime")?,
+            .expect("failed to format OffsetDateTime"),
     );
 
     configmap_api
@@ -200,12 +119,5 @@ async fn main() -> eyre::Result<()> {
             }),
         )
         .await
-        .with_context(|| {
-            format!(
-                "failed to patch Kubernetes ConfigMap `{}`",
-                config.quote_dedup_configmap_name
-            )
-        })?;
-
-    Ok(())
+        .expect("failed to patch Kubernetes ConfigMap");
 }
