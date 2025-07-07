@@ -1,3 +1,11 @@
+FROM docker.io/node:22 AS css-builder
+WORKDIR /app
+COPY templates templates
+COPY package.json package.json
+COPY tailwind.config.js tailwind.config.js
+COPY yarn.lock yarn.lock
+RUN yarn && yarn run build-css
+
 FROM docker.io/lukemathwalker/cargo-chef:latest-rust-1.88 AS chef
 WORKDIR /app
 
@@ -11,22 +19,18 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
 
-RUN curl -LO https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64 &&\
-    chmod +x tailwindcss-linux-x64 &&\
-    mv tailwindcss-linux-x64 /usr/local/bin/tailwindcss
-
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 
-COPY tailwind.config.js tailwind.config.js
 COPY locales locales
 COPY src src
 COPY templates templates
 COPY build.rs build.rs
 COPY Cargo.lock Cargo.lock
 COPY Cargo.toml Cargo.toml
+COPY --from=css-builder /app/dist dist
 
-RUN cargo build --release
+RUN SKIP_TAILWINDCSS=1 cargo build --release
 
 FROM docker.io/debian:stable-slim AS runtime
 

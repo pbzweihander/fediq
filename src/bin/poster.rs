@@ -26,7 +26,7 @@ static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
     let mut headers = HeaderMap::new();
     headers.insert(
         "user-agent",
-        concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
+        "fediq.pbzweihander.dev"
             .parse()
             .expect("failed to parse header value"),
     );

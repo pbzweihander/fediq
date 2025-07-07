@@ -262,15 +262,6 @@ async fn post_index(
     Form(req): Form<PostIndexReq>,
 ) -> Result<Html<String>, Redirect> {
     match (user, req) {
-        (Err(()), _) => Ok(Html(
-            IndexLogoutTemplate {
-                language,
-                domain: String::new(),
-                domain_error: None,
-            }
-            .render()
-            .unwrap(),
-        )),
         (_, PostIndexReq::Login { domain }) => {
             if domain.is_empty() {
                 return Ok(Html(
@@ -306,6 +297,15 @@ async fn post_index(
                 }
             }
         }
+        (Err(()), _) => Ok(Html(
+            IndexLogoutTemplate {
+                language,
+                domain: String::new(),
+                domain_error: None,
+            }
+            .render()
+            .unwrap(),
+        )),
         (Ok(user), PostIndexReq::AddQuote(req)) => {
             if req.is_empty() {
                 let quotes = load_quotes(&user.domain, &user.handle)

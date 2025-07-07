@@ -1,3 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss" source(none);
+@source "./**/*.html";
+
+@plugin "daisyui" {
+    themes: light --default;
+}

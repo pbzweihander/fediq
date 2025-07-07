@@ -13,8 +13,8 @@ fn main() {
     println!("cargo:rerun-if-changed=templates");
     println!("cargo:rerun-if-changed=dist");
 
-    let output = Command::new("tailwindcss")
-        .args(["-i", "templates/base.css", "-o", "dist/index.css"])
+    let output = Command::new("yarn")
+        .args(["run", "build-css"])
         .output()
         .expect("failed to run tailwindcss CLI");
     if !output.status.success() {

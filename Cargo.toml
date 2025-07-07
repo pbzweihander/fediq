@@ -46,3 +46,7 @@ url = { version = "2.5.4", features = ["serde"] }
 [[bin]]
 name = "fediq-poster"
 path = "src/bin/poster.rs"
+
+[[bin]]
+name = "fediq-streaming"
+path = "src/bin/streaming.rs"

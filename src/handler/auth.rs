@@ -122,11 +122,11 @@ pub fn create_router() -> Router {
     Router::new()
         .route("/logout", routing::get(get_logout))
         .route(
-            "/callback/mastodon/:domain",
+            "/callback/mastodon/{domain}",
             routing::get(get_callback_mastodon),
         )
         .route(
-            "/callback/misskey/:domain",
+            "/callback/misskey/{domain}",
             routing::get(get_callback_misskey),
         )
 }

@@ -16,7 +16,7 @@ static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
     let mut headers = HeaderMap::new();
     headers.insert(
         "user-agent",
-        concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"))
+        "fediq.pbzweihander.dev"
             .parse()
             .expect("failed to parse header value"),
     );
@@ -112,7 +112,11 @@ async fn get_auth_redirect_url_mastodon(domain: &str) -> eyre::Result<Url> {
         app
     } else {
         let req = MastodonCreateAppReq {
-            client_name: env!("CARGO_PKG_NAME"),
+            client_name: if cfg!(debug_assertions) {
+                "fediq-debug.pbzweihander.dev"
+            } else {
+                "fediq.pbzweihander.dev"
+            },
             redirect_uris: &redirect_url,
             scopes: "read:accounts write:statuses",
             website: CONFIG.public_url.clone(),
@@ -185,7 +189,11 @@ async fn get_auth_redirect_url_misskey(domain: &str) -> eyre::Result<Url> {
             .join(&format!("./auth/callback/misskey/{domain}"))
             .context("failed to generate redirect URL")?;
         let req = MisskeyCreateAppReq {
-            name: env!("CARGO_PKG_NAME"),
+            name: if cfg!(debug_assertions) {
+                "fediq-debug.pbzweihander.dev"
+            } else {
+                "fediq.pbzweihander.dev"
+            },
             description: CONFIG.public_url.to_string(),
             permission: &["write:notes"],
             callback_url: redirect_url,

@@ -1,0 +1,14 @@
+{
+  "name": "fediq",
+  "version": "0.0.0",
+  "author": "pbzweihander <pbzweihander@gmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "build-css": "npx @tailwindcss/cli -i templates/base.css -o dist/index.css"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.11",
+    "daisyui": "^5.0.46",
+    "tailwindcss": "^4.1.11"
+  }
+}

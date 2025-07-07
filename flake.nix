@@ -28,7 +28,7 @@
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
             rust-toolchain
-            tailwindcss_4
+            nodejs_22
           ];
         };
       }
