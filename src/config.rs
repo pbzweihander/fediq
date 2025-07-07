@@ -34,6 +34,9 @@ pub struct Config {
 
     pub poster_container_image: String,
     pub poster_serviceaccount_name: String,
+
+    pub streaming_container_image: String,
+    pub streaming_serviceaccount_name: String,
 }
 
 impl Config {

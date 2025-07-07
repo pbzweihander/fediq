@@ -1,13 +1,14 @@
 use std::collections::BTreeMap;
 
-use async_once_cell::OnceCell;
 use base64::Engine;
 use eyre::Context;
 use k8s_openapi::{
     api::{
+        apps::v1::{Deployment, DeploymentSpec},
         batch::v1::{CronJob, CronJobSpec, JobSpec, JobTemplateSpec},
         core::v1::{ConfigMap, Container, EnvVar, PodSpec, PodTemplateSpec, Secret},
     },
+    apimachinery::pkg::apis::meta::v1::LabelSelector,
     ByteString,
 };
 use kube::{
@@ -15,6 +16,7 @@ use kube::{
     core::ObjectMeta,
     Api, ResourceExt,
 };
+use once_cell::sync::OnceCell;
 use time::OffsetDateTime;
 use ulid::Ulid;
 
@@ -26,11 +28,15 @@ const DEDUP_DURATION_MINUTES_ANNOTATION_KEY: &str = "fediq.pbzweihander.dev/dedu
 
 async fn client() -> eyre::Result<kube::Client> {
     static CLIENT: OnceCell<kube::Client> = OnceCell::new();
-    CLIENT
-        .get_or_try_init(kube::Client::try_default())
-        .await
-        .cloned()
-        .context("failed to initialize Kubernetes client")
+    if let Some(client) = CLIENT.get() {
+        Ok(client.clone())
+    } else {
+        let client = kube::Client::try_default()
+            .await
+            .context("failed to initialize Kubernetes client")?;
+        let _ = CLIENT.set(client.clone());
+        Ok(client)
+    }
 }
 
 fn fediverse_app_secret_name(domain: &str) -> String {
@@ -59,6 +65,12 @@ fn quote_dedup_configmap_name(domain: &str, handle: &str) -> String {
 
 fn poster_cronjob_name(domain: &str, handle: &str) -> String {
     format!("fediq-poster-{domain}-{handle}")
+        .to_ascii_lowercase()
+        .replace('_', "-")
+}
+
+fn streaming_deployment_name(domain: &str, handle: &str) -> String {
+    format!("fediq-streaming-{domain}-{handle}")
         .to_ascii_lowercase()
         .replace('_', "-")
 }
@@ -590,4 +602,124 @@ pub async fn delete_reply(
         })?;
 
     Ok(reply_map)
+}
+
+pub async fn get_reply_enabled(domain: &str, handle: &str) -> eyre::Result<bool> {
+    let client = client().await?;
+    let deployment_api = Api::<Deployment>::default_namespaced(client);
+
+    let deployment_name = streaming_deployment_name(domain, handle);
+    let deployment = deployment_api
+        .get_opt(&deployment_name)
+        .await
+        .with_context(|| format!("failed to get Kubernetes Deployment `{deployment_name}`"))?;
+
+    Ok(deployment.is_some())
+}
+
+pub async fn enable_reply(
+    domain: &str,
+    handle: &str,
+    access_token: &str,
+    software: &str,
+) -> eyre::Result<()> {
+    let client = client().await?;
+    let deployment_api = Api::<Deployment>::default_namespaced(client);
+
+    let deployment_name = streaming_deployment_name(domain, handle);
+    let mut pod_labels = BTreeMap::new();
+    pod_labels.insert(
+        "app.kubernetes.io/name".to_string(),
+        "fediq-streaming".to_string(),
+    );
+    pod_labels.insert(
+        "app.kubernetes.io/instance".to_string(),
+        deployment_name.to_string(),
+    );
+    let deployment = Deployment {
+        metadata: ObjectMeta {
+            name: Some(deployment_name.clone()),
+            ..Default::default()
+        },
+        spec: Some(DeploymentSpec {
+            replicas: Some(1),
+            selector: LabelSelector {
+                match_labels: Some(pod_labels.clone()),
+                ..Default::default()
+            },
+            template: PodTemplateSpec {
+                metadata: Some(ObjectMeta {
+                    labels: Some(pod_labels),
+                    ..Default::default()
+                }),
+                spec: Some(PodSpec {
+                    service_account_name: Some(CONFIG.streaming_serviceaccount_name.clone()),
+                    containers: vec![Container {
+                        name: "streaming".to_string(),
+                        image: Some(CONFIG.streaming_container_image.clone()),
+                        command: Some(vec!["fediq-streaming".to_string()]),
+                        env: Some(vec![
+                            EnvVar {
+                                name: "DOMAIN".to_string(),
+                                value: Some(domain.to_string()),
+                                value_from: None,
+                            },
+                            EnvVar {
+                                name: "ACCESS_TOKEN".to_string(),
+                                value: Some(access_token.to_string()),
+                                value_from: None,
+                            },
+                            EnvVar {
+                                name: "SOFTWARE".to_string(),
+                                value: Some(software.to_string()),
+                                value_from: None,
+                            },
+                            EnvVar {
+                                name: "REPLIES_CONFIGMAP_NAME".to_string(),
+                                value: Some(replies_configmap_name(domain, handle)),
+                                value_from: None,
+                            },
+                        ]),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }),
+            },
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    deployment_api
+        .patch(
+            &deployment_name,
+            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &Patch::Apply(deployment),
+        )
+        .await
+        .with_context(|| format!("failed to patch Kubernetes Deoloyment `{deployment_name}`"))?;
+
+    Ok(())
+}
+
+pub async fn disable_reply(domain: &str, handle: &str) -> eyre::Result<()> {
+    let client = client().await?;
+    let deployment_api = Api::<Deployment>::default_namespaced(client);
+
+    let deployment_name = streaming_deployment_name(domain, handle);
+    if let Err(error) = deployment_api
+        .delete(&deployment_name, &Default::default())
+        .await
+    {
+        if let kube::Error::Api(kube::error::ErrorResponse { reason, .. }) = &error {
+            if reason == "NotFound" {
+                return Ok(());
+            }
+        }
+        return Err(eyre::Report::new(error).wrap_err(format!(
+            "failed to delete Kubernetes Deployment `{deployment_name}`"
+        )));
+    }
+
+    Ok(())
 }

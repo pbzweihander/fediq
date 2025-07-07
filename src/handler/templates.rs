@@ -48,6 +48,7 @@ pub struct IndexLoginTemplate {
     pub cron_error: Option<TemplateError>,
     pub dedup_duration_minutes: u32,
     pub suspend_schedule: bool,
+    pub enable_reply: bool,
     pub is_reply_bulk_selected: bool,
     pub reply_map: BTreeMap<String, BTreeMap<Ulid, String>>,
     pub reply_keyword_input: String,

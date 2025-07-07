@@ -172,8 +172,8 @@
           </label>
 
           <div class="flex justify-center w-full mt-5">
-            {% let t_configure_schedule = self::t(language, "configure-schedule") %}
-            <input type="submit" class="btn btn-primary max-w-3xs w-full" value="{{ t_configure_schedule }}" />
+            {% let t_save = self::t(language, "save") %}
+            <input type="submit" class="btn btn-primary max-w-3xs w-full" value="{{ t_save }}" />
           </div>
         </form>
       </div>
@@ -276,6 +276,24 @@
           <div class="flex justify-center w-full mt-5">
             {% let t_add_reply = self::t(language, "add-reply") %}
             <input type="submit" class="btn btn-primary max-w-3xs w-full" value="{{ t_add_reply }}" />
+          </div>
+        </form>
+      </div>
+      <div class="divider"></div>
+
+      <div class="max-w-xl w-full">
+        <h2 class="mb-2 text-xl font-bold">{{ language|t("configure-reply") }}</h2>
+
+        <form class="fieldset" method="post">
+          <input type="hidden" name="type" value="configure_reply" />
+          <label class="label cursor-pointer">
+            <input type="checkbox" class="toggle toggle-primary" name="enable" {% if enable_reply %}checked{% endif
+              %} />
+            {{ language|t("enable") }}
+          </label>
+          <div class="flex justify-center w-full mt-5">
+            {% let t_save = self::t(language, "save") %}
+            <input type="submit" class="btn btn-primary max-w-3xs w-full" value="{{ t_save }}" />
           </div>
         </form>
       </div>

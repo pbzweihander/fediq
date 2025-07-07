@@ -2,7 +2,6 @@ FROM docker.io/node:22 AS css-builder
 WORKDIR /app
 COPY templates templates
 COPY package.json package.json
-COPY tailwind.config.js tailwind.config.js
 COPY yarn.lock yarn.lock
 RUN yarn && yarn run build-css
 
@@ -34,6 +33,6 @@ RUN SKIP_TAILWINDCSS=1 cargo build --release
 
 FROM docker.io/debian:stable-slim AS runtime
 
-COPY --from=builder /app/target/release/fediq /app/target/release/fediq-poster /usr/local/bin/
+COPY --from=builder /app/target/release/fediq /app/target/release/fediq-poster /app/target/release/fediq-streaming /usr/local/bin/
 
 CMD ["fediq"]

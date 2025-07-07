@@ -17,8 +17,8 @@ use crate::{
     api::{
         fediverse::get_auth_redirect_url,
         kube::{
-            add_quotes, add_replies, delete_quote, delete_reply, load_cronjob, load_quotes,
-            load_replies, save_cronjob,
+            add_quotes, add_replies, delete_quote, delete_reply, disable_reply, enable_reply,
+            get_reply_enabled, load_cronjob, load_quotes, load_replies, save_cronjob,
         },
     },
     internationalization::t,
@@ -81,6 +81,12 @@ async fn get_index(Language(language): Language, user: Result<FediverseUser, ()>
                 tracing::error!(?error, "failed to load replies");
                 BTreeMap::new()
             });
+        let enable_reply = get_reply_enabled(&user.domain, &user.handle)
+            .await
+            .unwrap_or_else(|error| {
+                tracing::error!(?error, "failed to get reply enabled");
+                false
+            });
 
         Html(
             IndexLoginTemplate {
@@ -96,6 +102,7 @@ async fn get_index(Language(language): Language, user: Result<FediverseUser, ()>
                 cron_error: None,
                 dedup_duration_minutes,
                 suspend_schedule,
+                enable_reply,
                 is_reply_bulk_selected: false,
                 reply_map,
                 reply_keyword_input: String::new(),
@@ -254,6 +261,10 @@ enum PostIndexReq {
         keyword: String,
         reply_id: Ulid,
     },
+    ConfigureReply {
+        #[serde(default)]
+        enable: String,
+    },
 }
 
 #[tracing::instrument(skip_all, fields(user = fmt_user(&user)))]
@@ -328,6 +339,12 @@ async fn post_index(
                         tracing::error!(?error, "failed to load replies");
                         BTreeMap::new()
                     });
+                let enable_reply = get_reply_enabled(&user.domain, &user.handle)
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::error!(?error, "failed to get reply enabled");
+                        false
+                    });
 
                 Ok(Html(
                     IndexLoginTemplate {
@@ -345,6 +362,7 @@ async fn post_index(
                         cron_error: None,
                         dedup_duration_minutes,
                         suspend_schedule,
+                        enable_reply,
                         is_reply_bulk_selected: false,
                         reply_map,
                         reply_keyword_input: String::new(),
@@ -378,6 +396,12 @@ async fn post_index(
                         tracing::error!(?error, "failed to load replies");
                         BTreeMap::new()
                     });
+                let enable_reply = get_reply_enabled(&user.domain, &user.handle)
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::error!(?error, "failed to get reply enabled");
+                        false
+                    });
 
                 match add_quotes(&user.domain, &user.handle, quotes).await {
                     Ok(quotes) => Ok(Html(
@@ -393,6 +417,7 @@ async fn post_index(
                             cron_error: None,
                             dedup_duration_minutes,
                             suspend_schedule,
+                            enable_reply,
                             is_reply_bulk_selected: false,
                             reply_map,
                             reply_keyword_input: String::new(),
@@ -428,6 +453,7 @@ async fn post_index(
                                 cron_error: None,
                                 dedup_duration_minutes,
                                 suspend_schedule,
+                                enable_reply,
                                 is_reply_bulk_selected: false,
                                 reply_map,
                                 reply_keyword_input: String::new(),
@@ -465,6 +491,12 @@ async fn post_index(
                     tracing::error!(?error, "failed to load replies");
                     BTreeMap::new()
                 });
+            let enable_reply = get_reply_enabled(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to get reply enabled");
+                    false
+                });
 
             if cron.is_empty() {
                 return Ok(Html(
@@ -483,6 +515,7 @@ async fn post_index(
                         }),
                         dedup_duration_minutes,
                         suspend_schedule: suspend,
+                        enable_reply,
                         is_reply_bulk_selected: false,
                         reply_map,
                         reply_keyword_input: String::new(),
@@ -518,6 +551,7 @@ async fn post_index(
                         quote_error: None,
                         cron_input: cron,
                         cron_error: None,
+                        enable_reply,
                         dedup_duration_minutes,
                         suspend_schedule: suspend,
                         is_reply_bulk_selected: false,
@@ -549,6 +583,7 @@ async fn post_index(
                             }),
                             dedup_duration_minutes,
                             suspend_schedule: suspend,
+                            enable_reply,
                             is_reply_bulk_selected: false,
                             reply_map,
                             reply_keyword_input: String::new(),
@@ -589,6 +624,12 @@ async fn post_index(
                     tracing::error!(?error, "failed to load replies");
                     BTreeMap::new()
                 });
+            let enable_reply = get_reply_enabled(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to get reply enabled");
+                    false
+                });
 
             Ok(Html(
                 IndexLoginTemplate {
@@ -603,6 +644,7 @@ async fn post_index(
                     cron_error: None,
                     dedup_duration_minutes,
                     suspend_schedule,
+                    enable_reply,
                     is_reply_bulk_selected: false,
                     reply_map,
                     reply_keyword_input: String::new(),
@@ -636,6 +678,12 @@ async fn post_index(
                         tracing::error!(?error, "failed to load replies");
                         BTreeMap::new()
                     });
+                let enable_reply = get_reply_enabled(&user.domain, &user.handle)
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::error!(?error, "failed to get reply enabled");
+                        false
+                    });
 
                 Ok(Html(
                     IndexLoginTemplate {
@@ -650,6 +698,7 @@ async fn post_index(
                         cron_error: None,
                         dedup_duration_minutes,
                         suspend_schedule,
+                        enable_reply,
                         is_reply_bulk_selected: req.is_bulk(),
                         reply_map,
                         reply_keyword_input: req.keyword(),
@@ -694,6 +743,12 @@ async fn post_index(
                             tracing::error!(?error, "failed to load schedule");
                             (String::new(), 0, false)
                         });
+                let enable_reply = get_reply_enabled(&user.domain, &user.handle)
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::error!(?error, "failed to get reply enabled");
+                        false
+                    });
 
                 match add_replies(&user.domain, &user.handle, keyword, replies).await {
                     Ok(reply_map) => Ok(Html(
@@ -709,6 +764,7 @@ async fn post_index(
                             cron_error: None,
                             dedup_duration_minutes,
                             suspend_schedule,
+                            enable_reply,
                             is_reply_bulk_selected: req.is_bulk(),
                             reply_map,
                             reply_keyword_input: req.keyword(),
@@ -741,6 +797,7 @@ async fn post_index(
                                 cron_error: None,
                                 dedup_duration_minutes,
                                 suspend_schedule,
+                                enable_reply,
                                 is_reply_bulk_selected: req.is_bulk(),
                                 reply_map,
                                 reply_keyword_input: req.keyword(),
@@ -786,6 +843,12 @@ async fn post_index(
                         tracing::error!(?error, "failed to load schedule");
                         (String::new(), 0, false)
                     });
+            let enable_reply = get_reply_enabled(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to get reply enabled");
+                    false
+                });
 
             Ok(Html(
                 IndexLoginTemplate {
@@ -800,6 +863,7 @@ async fn post_index(
                     cron_error: None,
                     dedup_duration_minutes,
                     suspend_schedule,
+                    enable_reply,
                     is_reply_bulk_selected: false,
                     reply_map,
                     reply_keyword_input: String::new(),
@@ -807,6 +871,73 @@ async fn post_index(
                     reply_bulk_input: String::new(),
                     reply_error: None,
                     language,
+                }
+                .render()
+                .unwrap(),
+            ))
+        }
+        (Ok(user), PostIndexReq::ConfigureReply { enable }) => {
+            if enable == "on" {
+                if let Err(error) = enable_reply(
+                    &user.domain,
+                    &user.handle,
+                    &user.access_token,
+                    &user.software,
+                )
+                .await
+                {
+                    tracing::error!(?error, "failed to enable reply");
+                }
+            } else if let Err(error) = disable_reply(&user.domain, &user.handle).await {
+                tracing::error!(?error, "failed to disable reply");
+            }
+            let quotes = load_quotes(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to load quotes");
+                    BTreeMap::new()
+                });
+            let (cron_input, dedup_duration_minutes, suspend_schedule) =
+                load_cronjob(&user.domain, &user.handle)
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::error!(?error, "failed to load schedule");
+                        (String::new(), 0, false)
+                    });
+            let reply_map = load_replies(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to load replies");
+                    BTreeMap::new()
+                });
+            let enable_reply = get_reply_enabled(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to get reply enabled");
+                    false
+                });
+
+            Ok(Html(
+                IndexLoginTemplate {
+                    language,
+                    user,
+                    quote_mode_selected: false,
+                    quotes,
+                    is_quote_bulk_selected: false,
+                    quote_input: String::new(),
+                    quote_bulk_input: String::new(),
+                    quote_error: None,
+                    cron_input,
+                    cron_error: None,
+                    dedup_duration_minutes,
+                    suspend_schedule,
+                    enable_reply,
+                    is_reply_bulk_selected: false,
+                    reply_map,
+                    reply_keyword_input: String::new(),
+                    reply_input: String::new(),
+                    reply_bulk_input: String::new(),
+                    reply_error: None,
                 }
                 .render()
                 .unwrap(),
