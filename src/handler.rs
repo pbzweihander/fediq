@@ -75,7 +75,7 @@ async fn get_index(Language(language): Language, user: Result<FediverseUser, ()>
                     tracing::error!(?error, "failed to load schedule");
                     (String::new(), 0, false)
                 });
-        let replies = load_replies(&user.domain, &user.handle)
+        let reply_map = load_replies(&user.domain, &user.handle)
             .await
             .unwrap_or_else(|error| {
                 tracing::error!(?error, "failed to load replies");
@@ -86,6 +86,7 @@ async fn get_index(Language(language): Language, user: Result<FediverseUser, ()>
             IndexLoginTemplate {
                 language,
                 user,
+                quote_mode_selected: true,
                 quotes,
                 is_quote_bulk_selected: false,
                 quote_input: String::new(),
@@ -96,7 +97,7 @@ async fn get_index(Language(language): Language, user: Result<FediverseUser, ()>
                 dedup_duration_minutes,
                 suspend_schedule,
                 is_reply_bulk_selected: false,
-                replies,
+                reply_map,
                 reply_keyword_input: String::new(),
                 reply_input: String::new(),
                 reply_bulk_input: String::new(),
@@ -321,7 +322,7 @@ async fn post_index(
                             tracing::error!(?error, "failed to load schedule");
                             (String::new(), 0, false)
                         });
-                let replies = load_replies(&user.domain, &user.handle)
+                let reply_map = load_replies(&user.domain, &user.handle)
                     .await
                     .unwrap_or_else(|error| {
                         tracing::error!(?error, "failed to load replies");
@@ -331,6 +332,7 @@ async fn post_index(
                 Ok(Html(
                     IndexLoginTemplate {
                         user,
+                        quote_mode_selected: true,
                         quotes,
                         is_quote_bulk_selected: req.is_bulk(),
                         quote_input: req.as_one_by_one(),
@@ -344,7 +346,7 @@ async fn post_index(
                         dedup_duration_minutes,
                         suspend_schedule,
                         is_reply_bulk_selected: false,
-                        replies,
+                        reply_map,
                         reply_keyword_input: String::new(),
                         reply_input: String::new(),
                         reply_bulk_input: String::new(),
@@ -370,7 +372,7 @@ async fn post_index(
                             tracing::error!(?error, "failed to load schedule");
                             (String::new(), 0, false)
                         });
-                let replies = load_replies(&user.domain, &user.handle)
+                let reply_map = load_replies(&user.domain, &user.handle)
                     .await
                     .unwrap_or_else(|error| {
                         tracing::error!(?error, "failed to load replies");
@@ -381,6 +383,7 @@ async fn post_index(
                     Ok(quotes) => Ok(Html(
                         IndexLoginTemplate {
                             user,
+                            quote_mode_selected: true,
                             quotes,
                             is_quote_bulk_selected: req.is_bulk(),
                             quote_input: String::new(),
@@ -391,7 +394,7 @@ async fn post_index(
                             dedup_duration_minutes,
                             suspend_schedule,
                             is_reply_bulk_selected: false,
-                            replies,
+                            reply_map,
                             reply_keyword_input: String::new(),
                             reply_input: String::new(),
                             reply_bulk_input: String::new(),
@@ -412,6 +415,7 @@ async fn post_index(
                         Ok(Html(
                             IndexLoginTemplate {
                                 user,
+                                quote_mode_selected: true,
                                 quotes,
                                 is_quote_bulk_selected: req.is_bulk(),
                                 quote_input: req.as_one_by_one(),
@@ -425,7 +429,7 @@ async fn post_index(
                                 dedup_duration_minutes,
                                 suspend_schedule,
                                 is_reply_bulk_selected: false,
-                                replies,
+                                reply_map,
                                 reply_keyword_input: String::new(),
                                 reply_input: String::new(),
                                 reply_bulk_input: String::new(),
@@ -455,7 +459,7 @@ async fn post_index(
                     tracing::error!(?error, "failed to load quotes");
                     BTreeMap::new()
                 });
-            let replies = load_replies(&user.domain, &user.handle)
+            let reply_map = load_replies(&user.domain, &user.handle)
                 .await
                 .unwrap_or_else(|error| {
                     tracing::error!(?error, "failed to load replies");
@@ -466,6 +470,7 @@ async fn post_index(
                 return Ok(Html(
                     IndexLoginTemplate {
                         user,
+                        quote_mode_selected: true,
                         quotes,
                         is_quote_bulk_selected: false,
                         quote_input: String::new(),
@@ -479,7 +484,7 @@ async fn post_index(
                         dedup_duration_minutes,
                         suspend_schedule: suspend,
                         is_reply_bulk_selected: false,
-                        replies,
+                        reply_map,
                         reply_keyword_input: String::new(),
                         reply_input: String::new(),
                         reply_bulk_input: String::new(),
@@ -505,6 +510,7 @@ async fn post_index(
                 Ok(()) => Ok(Html(
                     IndexLoginTemplate {
                         user,
+                        quote_mode_selected: true,
                         quotes,
                         is_quote_bulk_selected: false,
                         quote_input: String::new(),
@@ -515,7 +521,7 @@ async fn post_index(
                         dedup_duration_minutes,
                         suspend_schedule: suspend,
                         is_reply_bulk_selected: false,
-                        replies,
+                        reply_map,
                         reply_keyword_input: String::new(),
                         reply_input: String::new(),
                         reply_bulk_input: String::new(),
@@ -530,6 +536,7 @@ async fn post_index(
                     Ok(Html(
                         IndexLoginTemplate {
                             user,
+                            quote_mode_selected: true,
                             quotes,
                             is_quote_bulk_selected: false,
                             quote_input: String::new(),
@@ -543,7 +550,7 @@ async fn post_index(
                             dedup_duration_minutes,
                             suspend_schedule: suspend,
                             is_reply_bulk_selected: false,
-                            replies,
+                            reply_map,
                             reply_keyword_input: String::new(),
                             reply_input: String::new(),
                             reply_bulk_input: String::new(),
@@ -576,7 +583,7 @@ async fn post_index(
                         tracing::error!(?error, "failed to load schedule");
                         (String::new(), 0, false)
                     });
-            let replies = load_replies(&user.domain, &user.handle)
+            let reply_map = load_replies(&user.domain, &user.handle)
                 .await
                 .unwrap_or_else(|error| {
                     tracing::error!(?error, "failed to load replies");
@@ -586,6 +593,7 @@ async fn post_index(
             Ok(Html(
                 IndexLoginTemplate {
                     user,
+                    quote_mode_selected: false,
                     quotes,
                     is_quote_bulk_selected: false,
                     quote_input: String::new(),
@@ -596,7 +604,7 @@ async fn post_index(
                     dedup_duration_minutes,
                     suspend_schedule,
                     is_reply_bulk_selected: false,
-                    replies,
+                    reply_map,
                     reply_keyword_input: String::new(),
                     reply_input: String::new(),
                     reply_bulk_input: String::new(),
@@ -622,7 +630,7 @@ async fn post_index(
                             tracing::error!(?error, "failed to load schedule");
                             (String::new(), 0, false)
                         });
-                let replies = load_replies(&user.domain, &user.handle)
+                let reply_map = load_replies(&user.domain, &user.handle)
                     .await
                     .unwrap_or_else(|error| {
                         tracing::error!(?error, "failed to load replies");
@@ -632,6 +640,7 @@ async fn post_index(
                 Ok(Html(
                     IndexLoginTemplate {
                         user,
+                        quote_mode_selected: false,
                         quotes,
                         is_quote_bulk_selected: false,
                         quote_input: String::new(),
@@ -642,7 +651,7 @@ async fn post_index(
                         dedup_duration_minutes,
                         suspend_schedule,
                         is_reply_bulk_selected: req.is_bulk(),
-                        replies,
+                        reply_map,
                         reply_keyword_input: req.keyword(),
                         reply_input: req.as_one_by_one(),
                         reply_bulk_input: req.as_bulk(),
@@ -687,9 +696,10 @@ async fn post_index(
                         });
 
                 match add_replies(&user.domain, &user.handle, keyword, replies).await {
-                    Ok(replies) => Ok(Html(
+                    Ok(reply_map) => Ok(Html(
                         IndexLoginTemplate {
                             user,
+                            quote_mode_selected: false,
                             quotes,
                             is_quote_bulk_selected: false,
                             quote_input: String::new(),
@@ -700,8 +710,8 @@ async fn post_index(
                             dedup_duration_minutes,
                             suspend_schedule,
                             is_reply_bulk_selected: req.is_bulk(),
-                            replies,
-                            reply_keyword_input: String::new(),
+                            reply_map,
+                            reply_keyword_input: req.keyword(),
                             reply_input: String::new(),
                             reply_bulk_input: String::new(),
                             reply_error: None,
@@ -712,7 +722,7 @@ async fn post_index(
                     )),
                     Err(error) => {
                         tracing::warn!(?error, "failed to add replies");
-                        let replies = load_replies(&user.domain, &user.handle)
+                        let reply_map = load_replies(&user.domain, &user.handle)
                             .await
                             .unwrap_or_else(|error| {
                                 tracing::error!(?error, "failed to load replies");
@@ -721,6 +731,7 @@ async fn post_index(
                         Ok(Html(
                             IndexLoginTemplate {
                                 user,
+                                quote_mode_selected: false,
                                 quotes,
                                 is_quote_bulk_selected: false,
                                 quote_input: String::new(),
@@ -731,7 +742,7 @@ async fn post_index(
                                 dedup_duration_minutes,
                                 suspend_schedule,
                                 is_reply_bulk_selected: req.is_bulk(),
-                                replies,
+                                reply_map,
                                 reply_keyword_input: req.keyword(),
                                 reply_input: req.as_one_by_one(),
                                 reply_bulk_input: req.as_bulk(),
@@ -749,7 +760,8 @@ async fn post_index(
             }
         }
         (Ok(user), PostIndexReq::DeleteReply { keyword, reply_id }) => {
-            let replies = match delete_reply(&user.domain, &user.handle, keyword, reply_id).await {
+            let reply_map = match delete_reply(&user.domain, &user.handle, keyword, reply_id).await
+            {
                 Ok(replies) => replies,
                 Err(error) => {
                     tracing::error!(?error, "failed to delete reply");
@@ -778,6 +790,7 @@ async fn post_index(
             Ok(Html(
                 IndexLoginTemplate {
                     user,
+                    quote_mode_selected: false,
                     quotes,
                     is_quote_bulk_selected: false,
                     quote_input: String::new(),
@@ -788,7 +801,7 @@ async fn post_index(
                     dedup_duration_minutes,
                     suspend_schedule,
                     is_reply_bulk_selected: false,
-                    replies,
+                    reply_map,
                     reply_keyword_input: String::new(),
                     reply_input: String::new(),
                     reply_bulk_input: String::new(),

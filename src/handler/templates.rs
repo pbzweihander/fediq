@@ -38,6 +38,7 @@ pub struct TemplateError {
 pub struct IndexLoginTemplate {
     pub language: LanguageIdentifier,
     pub user: FediverseUser,
+    pub quote_mode_selected: bool,
     pub is_quote_bulk_selected: bool,
     pub quotes: BTreeMap<Ulid, (String, bool)>,
     pub quote_input: String,
@@ -48,7 +49,7 @@ pub struct IndexLoginTemplate {
     pub dedup_duration_minutes: u32,
     pub suspend_schedule: bool,
     pub is_reply_bulk_selected: bool,
-    pub replies: BTreeMap<String, BTreeMap<Ulid, String>>,
+    pub reply_map: BTreeMap<String, BTreeMap<Ulid, String>>,
     pub reply_keyword_input: String,
     pub reply_input: String,
     pub reply_bulk_input: String,

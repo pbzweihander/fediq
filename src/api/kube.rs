@@ -450,22 +450,18 @@ pub async fn save_cronjob(
 fn deserialize_reply_map(
     data: BTreeMap<String, String>,
 ) -> BTreeMap<String, BTreeMap<Ulid, String>> {
-    data.into_iter()
-        .filter_map(|(k, v)| {
-            serde_json::from_str::<BTreeMap<Ulid, String>>(&v)
-                .ok()
-                .map(|v| (k, v))
-        })
-        .collect::<BTreeMap<_, _>>()
+    data.get("data")
+        .and_then(|v| serde_json::from_str::<BTreeMap<String, BTreeMap<Ulid, String>>>(v).ok())
+        .unwrap_or_default()
 }
 
 fn serialize_reply_map(
     reply_map: &BTreeMap<String, BTreeMap<Ulid, String>>,
 ) -> BTreeMap<String, String> {
-    reply_map
-        .iter()
-        .map(|(k, v)| (k.clone(), serde_json::to_string(&v).unwrap()))
-        .collect::<BTreeMap<_, _>>()
+    let data = serde_json::to_string(reply_map).unwrap();
+    let mut output = BTreeMap::new();
+    output.insert("data".to_string(), data);
+    output
 }
 
 pub async fn load_replies(

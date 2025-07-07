@@ -1,10 +1,16 @@
 {% extends "base.html" %}
 {% block body %}
-<div class="flex flex-col w-full items-center py-4 px-2 gap-2">
+<div class="flex flex-col w-full items-center pt-4 pb-10 px-2 gap-2">
   <div class="max-w-5xl w-full">
-    <p class="mb-4">{{ language|t("description") }}</p>
+    <p class="mb-2">{{ language|t("description") }}</p>
+    <p class="mb-4">
+      {{ language|t("issue-prefix") }}
+      <a href="https://yuri.garden/@pbzweihander" target="_blank" rel="noopener noreferrer"
+        class="underline text-blue-600">@pbzweihander@yuri.garden</a>
+      {{ language|t("issue-suffix") }}
+    </p>
+    <div class="divider"></div>
   </div>
-  <div class="divider"></div>
   {% block content %}{% endblock %}
 </div>
 {% endblock %}
