@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use askama::Template;
 use fluent_templates::{LanguageIdentifier, Loader};
 use ulid::Ulid;
@@ -36,8 +38,8 @@ pub struct TemplateError {
 pub struct IndexLoginTemplate {
     pub language: LanguageIdentifier,
     pub user: FediverseUser,
-    pub is_bulk_selected: bool,
-    pub quotes: Vec<(Ulid, String, bool)>,
+    pub is_quote_bulk_selected: bool,
+    pub quotes: BTreeMap<Ulid, (String, bool)>,
     pub quote_input: String,
     pub quote_bulk_input: String,
     pub quote_error: Option<TemplateError>,
@@ -45,6 +47,12 @@ pub struct IndexLoginTemplate {
     pub cron_error: Option<TemplateError>,
     pub dedup_duration_minutes: u32,
     pub suspend_schedule: bool,
+    pub is_reply_bulk_selected: bool,
+    pub replies: BTreeMap<String, BTreeMap<Ulid, String>>,
+    pub reply_keyword_input: String,
+    pub reply_input: String,
+    pub reply_bulk_input: String,
+    pub reply_error: Option<TemplateError>,
 }
 
 #[derive(Template)]

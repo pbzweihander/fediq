@@ -23,7 +23,7 @@
   <div role="tablist" class="tabs tabs-bordered">
     {% let t_add_one_by_one = self::t(language, "add-one-by-one") %}
     <input type="radio" class="tab" name="add_quote_mode" value="one_by_one" aria-label="{{ t_add_one_by_one }}" {% if
-      !is_bulk_selected %} checked {% endif %} />
+      !is_quote_bulk_selected %}checked{% endif %} />
     <div role="tabpanel" class="tab-content pt-2">
       <label class="label label-text">
         {{ language|t("add-quote-one-by-one-guide") }}
@@ -33,7 +33,7 @@
     </div>
     {% let t_add_bulk = self::t(language, "add-bulk") %}
     <input type="radio" class="tab" name="add_quote_mode" value="bulk" aria-label="{{ t_add_bulk }}" {% if
-      is_bulk_selected %} checked {% endif %} />
+      is_quote_bulk_selected %}checked{% endif %} />
     <div role="tabpanel" class="tab-content pt-2">
       <label class="label label-text">
         {{ language|t("add-quote-bulk-guide") }}
@@ -155,7 +155,7 @@
 {% if quotes.is_empty() %}
 <div class="text-neutral-content">{{ language|t("empty") }}</div>
 {% else %}
-{% for (id, quote, sent_recently) in quotes.iter().rev() %}
+{% for (id, (quote, sent_recently)) in quotes.iter().rev() %}
 <div class="chat chat-start py-2">
   {% if let Some(avatar_url) = user.avatar_url %}
   <div class="avatar chat-image">

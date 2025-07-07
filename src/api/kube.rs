@@ -45,6 +45,12 @@ fn quotes_configmap_name(domain: &str, handle: &str) -> String {
         .replace('_', "-")
 }
 
+fn replies_configmap_name(domain: &str, handle: &str) -> String {
+    format!("fediq-replies-{domain}-{handle}")
+        .to_ascii_lowercase()
+        .replace('_', "-")
+}
+
 fn quote_dedup_configmap_name(domain: &str, handle: &str) -> String {
     format!("fediq-quote-dedup-{domain}-{handle}")
         .to_ascii_lowercase()
@@ -133,13 +139,13 @@ pub async fn save_fediverse_app(domain: &str, app: &FediverseApp) -> eyre::Resul
     Ok(())
 }
 
-fn quote_map_to_vec(
+fn quote_map_to_template_map(
     quotes_map: &BTreeMap<String, String>,
     quote_dedup_map: &BTreeMap<String, String>,
-) -> Vec<(Ulid, String, bool)> {
+) -> BTreeMap<Ulid, (String, bool)> {
     let now = OffsetDateTime::now_utc();
 
-    let mut quotes = quotes_map
+    let quotes = quotes_map
         .iter()
         .filter_map(|(key, value)| {
             let id = Ulid::from_string(key).ok()?;
@@ -151,16 +157,17 @@ fn quote_map_to_vec(
                 })
                 .map(|timestamp| timestamp > now)
                 .unwrap_or(false);
-            Some((id, value.clone(), sent_recently))
+            Some((id, (value.clone(), sent_recently)))
         })
-        .collect::<Vec<_>>();
-
-    quotes.sort_by_key(|(id, _, _)| *id);
+        .collect::<BTreeMap<_, _>>();
 
     quotes
 }
 
-pub async fn load_quotes(domain: &str, handle: &str) -> eyre::Result<Vec<(Ulid, String, bool)>> {
+pub async fn load_quotes(
+    domain: &str,
+    handle: &str,
+) -> eyre::Result<BTreeMap<Ulid, (String, bool)>> {
     let client = client().await?;
     let configmap_api = Api::<ConfigMap>::default_namespaced(client);
 
@@ -174,10 +181,10 @@ pub async fn load_quotes(domain: &str, handle: &str) -> eyre::Result<Vec<(Ulid, 
             )
         })?;
     let Some(quotes_configmap) = quotes_configmap else {
-        return Ok(Vec::new());
+        return Ok(BTreeMap::new());
     };
     let Some(quotes_configmap_data) = quotes_configmap.data else {
-        return Ok(Vec::new());
+        return Ok(BTreeMap::new());
     };
 
     let quote_dedup_configmap_name = quote_dedup_configmap_name(domain, handle);
@@ -191,7 +198,7 @@ pub async fn load_quotes(domain: &str, handle: &str) -> eyre::Result<Vec<(Ulid, 
         .and_then(|cm| cm.data)
         .unwrap_or_default();
 
-    Ok(quote_map_to_vec(
+    Ok(quote_map_to_template_map(
         &quotes_configmap_data,
         &quote_dedup_configmap_data,
     ))
@@ -201,7 +208,7 @@ pub async fn add_quotes(
     domain: &str,
     handle: &str,
     quotes: Vec<String>,
-) -> eyre::Result<Vec<(Ulid, String, bool)>> {
+) -> eyre::Result<BTreeMap<Ulid, (String, bool)>> {
     let client = client().await?;
     let configmap_api = Api::<ConfigMap>::default_namespaced(client);
 
@@ -233,7 +240,7 @@ pub async fn add_quotes(
         .and_then(|cm| cm.data)
         .unwrap_or_default();
 
-    let quotes = quote_map_to_vec(&quotes_configmap_data, &quote_dedup_configmap_data);
+    let quotes = quote_map_to_template_map(&quotes_configmap_data, &quote_dedup_configmap_data);
 
     configmap_api
         .patch(
@@ -259,8 +266,8 @@ pub async fn add_quotes(
 pub async fn delete_quote(
     domain: &str,
     handle: &str,
-    id: &Ulid,
-) -> eyre::Result<Vec<(Ulid, String, bool)>> {
+    id: Ulid,
+) -> eyre::Result<BTreeMap<Ulid, (String, bool)>> {
     let client = client().await?;
     let configmap_api = Api::<ConfigMap>::default_namespaced(client);
 
@@ -288,7 +295,7 @@ pub async fn delete_quote(
         .and_then(|cm| cm.data)
         .unwrap_or_default();
 
-    let quotes = quote_map_to_vec(&quotes_configmap_data, &quote_dedup_configmap_data);
+    let quotes = quote_map_to_template_map(&quotes_configmap_data, &quote_dedup_configmap_data);
 
     configmap_api
         .patch(
@@ -320,7 +327,7 @@ pub async fn load_cronjob(domain: &str, handle: &str) -> eyre::Result<(String, u
         .get_opt(&poster_cronjob_name)
         .await
         .with_context(|| {
-            format!("failed to get Kubernetes Cronjob for domain `{domain}` and handle `{handle}`")
+            format!("failed to get quotes Kubernetes Cronjob for domain `{domain}` and handle `{handle}`")
         })?;
     let Some(poster_cronjob) = poster_cronjob else {
         return Ok((String::new(), 0, false));
@@ -438,4 +445,153 @@ pub async fn save_cronjob(
         .with_context(|| format!("failed to patch Kubernetes CronJob `{poster_cronjob_name}`"))?;
 
     Ok(())
+}
+
+fn deserialize_reply_map(
+    data: BTreeMap<String, String>,
+) -> BTreeMap<String, BTreeMap<Ulid, String>> {
+    data.into_iter()
+        .filter_map(|(k, v)| {
+            serde_json::from_str::<BTreeMap<Ulid, String>>(&v)
+                .ok()
+                .map(|v| (k, v))
+        })
+        .collect::<BTreeMap<_, _>>()
+}
+
+fn serialize_reply_map(
+    reply_map: &BTreeMap<String, BTreeMap<Ulid, String>>,
+) -> BTreeMap<String, String> {
+    reply_map
+        .iter()
+        .map(|(k, v)| (k.clone(), serde_json::to_string(&v).unwrap()))
+        .collect::<BTreeMap<_, _>>()
+}
+
+pub async fn load_replies(
+    domain: &str,
+    handle: &str,
+) -> eyre::Result<BTreeMap<String, BTreeMap<Ulid, String>>> {
+    let client = client().await?;
+    let configmap_api = Api::<ConfigMap>::default_namespaced(client);
+
+    let replies_configmap_name = replies_configmap_name(domain, handle);
+    let replies_configmap = configmap_api
+        .get_opt(&replies_configmap_name)
+        .await
+        .with_context(|| {
+            format!(
+                "failed to get replies Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
+            )
+        })?;
+    let replies_configmap_data = replies_configmap.and_then(|cm| cm.data).unwrap_or_default();
+
+    let reply_map = deserialize_reply_map(replies_configmap_data);
+
+    Ok(reply_map)
+}
+
+pub async fn add_replies(
+    domain: &str,
+    handle: &str,
+    keyword: String,
+    replies: Vec<String>,
+) -> eyre::Result<BTreeMap<String, BTreeMap<Ulid, String>>> {
+    let client = client().await?;
+    let configmap_api = Api::<ConfigMap>::default_namespaced(client);
+
+    let replies_configmap_name = replies_configmap_name(domain, handle);
+    let replies_configmap = configmap_api
+        .get_opt(&replies_configmap_name)
+        .await
+        .with_context(|| {
+            format!(
+                "failed to get replies Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
+            )
+        })?;
+    let replies_configmap_data = replies_configmap.and_then(|cm| cm.data).unwrap_or_default();
+
+    let mut reply_map = deserialize_reply_map(replies_configmap_data);
+
+    reply_map
+        .entry(keyword)
+        .or_default()
+        .extend(replies.into_iter().map({
+            let mut reply_id = Ulid::new();
+            move |reply| {
+                reply_id = reply_id.increment().unwrap_or_default();
+                (reply_id, reply)
+            }
+        }));
+
+    let data_to_save = serialize_reply_map(&reply_map);
+
+    configmap_api
+        .patch(
+            &replies_configmap_name,
+            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &Patch::Apply(ConfigMap {
+                metadata: ObjectMeta {
+                    name: Some(replies_configmap_name.clone()),
+                    ..Default::default()
+                },
+                data: Some(data_to_save),
+                ..Default::default()
+            }),
+        )
+        .await
+        .with_context(|| {
+            format!("failed to patch Kubernetes ConfigMap `{replies_configmap_name}`")
+        })?;
+
+    Ok(reply_map)
+}
+
+pub async fn delete_reply(
+    domain: &str,
+    handle: &str,
+    keyword: String,
+    id: Ulid,
+) -> eyre::Result<BTreeMap<String, BTreeMap<Ulid, String>>> {
+    let client = client().await?;
+    let configmap_api = Api::<ConfigMap>::default_namespaced(client);
+
+    let replies_configmap_name = replies_configmap_name(domain, handle);
+    let replies_configmap = configmap_api
+        .get_opt(&replies_configmap_name)
+        .await
+        .with_context(|| {
+            format!(
+                "failed to get Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
+            )
+        })?;
+    let replies_configmap_data = replies_configmap.and_then(|cm| cm.data).unwrap_or_default();
+
+    let mut reply_map = deserialize_reply_map(replies_configmap_data);
+
+    reply_map.entry(keyword).and_modify(|m| {
+        m.remove(&id);
+    });
+
+    let data_to_save = serialize_reply_map(&reply_map);
+
+    configmap_api
+        .patch(
+            &replies_configmap_name,
+            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &Patch::Apply(ConfigMap {
+                metadata: ObjectMeta {
+                    name: Some(replies_configmap_name.clone()),
+                    ..Default::default()
+                },
+                data: Some(data_to_save),
+                ..Default::default()
+            }),
+        )
+        .await
+        .with_context(|| {
+            format!("failed to patch Kubernetes ConfigMap `{replies_configmap_name}`")
+        })?;
+
+    Ok(reply_map)
 }

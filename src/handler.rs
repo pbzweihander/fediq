@@ -2,6 +2,8 @@ pub mod auth;
 mod extract;
 mod templates;
 
+use std::collections::BTreeMap;
+
 use askama::Template;
 use axum::{
     response::{Html, Redirect},
@@ -14,7 +16,10 @@ use ulid::Ulid;
 use crate::{
     api::{
         fediverse::get_auth_redirect_url,
-        kube::{add_quotes, delete_quote, load_cronjob, load_quotes, save_cronjob},
+        kube::{
+            add_quotes, add_replies, delete_quote, delete_reply, load_cronjob, load_quotes,
+            load_replies, save_cronjob,
+        },
     },
     internationalization::t,
 };
@@ -61,7 +66,7 @@ async fn get_index(Language(language): Language, user: Result<FediverseUser, ()>
             .await
             .unwrap_or_else(|error| {
                 tracing::error!(?error, "failed to load quotes");
-                Vec::new()
+                BTreeMap::new()
             });
         let (cron_input, dedup_duration_minutes, suspend_schedule) =
             load_cronjob(&user.domain, &user.handle)
@@ -70,13 +75,19 @@ async fn get_index(Language(language): Language, user: Result<FediverseUser, ()>
                     tracing::error!(?error, "failed to load schedule");
                     (String::new(), 0, false)
                 });
+        let replies = load_replies(&user.domain, &user.handle)
+            .await
+            .unwrap_or_else(|error| {
+                tracing::error!(?error, "failed to load replies");
+                BTreeMap::new()
+            });
 
         Html(
             IndexLoginTemplate {
                 language,
                 user,
                 quotes,
-                is_bulk_selected: false,
+                is_quote_bulk_selected: false,
                 quote_input: String::new(),
                 quote_bulk_input: String::new(),
                 quote_error: None,
@@ -84,6 +95,12 @@ async fn get_index(Language(language): Language, user: Result<FediverseUser, ()>
                 cron_error: None,
                 dedup_duration_minutes,
                 suspend_schedule,
+                is_reply_bulk_selected: false,
+                replies,
+                reply_keyword_input: String::new(),
+                reply_input: String::new(),
+                reply_bulk_input: String::new(),
+                reply_error: None,
             }
             .render()
             .unwrap(),
@@ -142,6 +159,78 @@ impl AddQuote {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "snake_case", tag = "add_reply_mode")]
+enum AddReply {
+    OneByOne {
+        #[serde(default)]
+        keyword: String,
+        #[serde(default)]
+        reply: String,
+    },
+    Bulk {
+        #[serde(default)]
+        keyword: String,
+        #[serde(default)]
+        reply_bulk: String,
+    },
+}
+
+impl AddReply {
+    fn is_empty(&self) -> bool {
+        match self {
+            Self::OneByOne { keyword, reply } => keyword.is_empty() || reply.is_empty(),
+            Self::Bulk {
+                keyword,
+                reply_bulk,
+            } => keyword.is_empty() || reply_bulk.is_empty(),
+        }
+    }
+
+    fn is_bulk(&self) -> bool {
+        matches!(
+            self,
+            Self::Bulk {
+                keyword: _,
+                reply_bulk: _
+            }
+        )
+    }
+
+    fn keyword(&self) -> String {
+        match self {
+            Self::OneByOne { keyword, reply: _ } => keyword.clone(),
+            Self::Bulk {
+                keyword,
+                reply_bulk: _,
+            } => keyword.clone(),
+        }
+    }
+
+    fn as_one_by_one(&self) -> String {
+        match self {
+            Self::OneByOne { keyword: _, reply } => reply.clone(),
+            Self::Bulk {
+                keyword: _,
+                reply_bulk: _,
+            } => String::new(),
+        }
+    }
+
+    fn as_bulk(&self) -> String {
+        match self {
+            Self::OneByOne {
+                keyword: _,
+                reply: _,
+            } => String::new(),
+            Self::Bulk {
+                keyword: _,
+                reply_bulk,
+            } => reply_bulk.clone(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
 enum PostIndexReq {
     Login {
@@ -159,6 +248,11 @@ enum PostIndexReq {
     DeleteQuote {
         quote_id: Ulid,
     },
+    AddReply(AddReply),
+    DeleteReply {
+        keyword: String,
+        reply_id: Ulid,
+    },
 }
 
 #[tracing::instrument(skip_all, fields(user = fmt_user(&user)))]
@@ -168,6 +262,15 @@ async fn post_index(
     Form(req): Form<PostIndexReq>,
 ) -> Result<Html<String>, Redirect> {
     match (user, req) {
+        (Err(()), _) => Ok(Html(
+            IndexLogoutTemplate {
+                language,
+                domain: String::new(),
+                domain_error: None,
+            }
+            .render()
+            .unwrap(),
+        )),
         (_, PostIndexReq::Login { domain }) => {
             if domain.is_empty() {
                 return Ok(Html(
@@ -209,7 +312,7 @@ async fn post_index(
                     .await
                     .unwrap_or_else(|error| {
                         tracing::error!(?error, "failed to load quotes");
-                        Vec::new()
+                        BTreeMap::new()
                     });
                 let (cron_input, dedup_duration_minutes, suspend_schedule) =
                     load_cronjob(&user.domain, &user.handle)
@@ -218,12 +321,18 @@ async fn post_index(
                             tracing::error!(?error, "failed to load schedule");
                             (String::new(), 0, false)
                         });
+                let replies = load_replies(&user.domain, &user.handle)
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::error!(?error, "failed to load replies");
+                        BTreeMap::new()
+                    });
 
                 Ok(Html(
                     IndexLoginTemplate {
                         user,
                         quotes,
-                        is_bulk_selected: req.is_bulk(),
+                        is_quote_bulk_selected: req.is_bulk(),
                         quote_input: req.as_one_by_one(),
                         quote_bulk_input: req.as_bulk(),
                         quote_error: Some(TemplateError {
@@ -234,6 +343,12 @@ async fn post_index(
                         cron_error: None,
                         dedup_duration_minutes,
                         suspend_schedule,
+                        is_reply_bulk_selected: false,
+                        replies,
+                        reply_keyword_input: String::new(),
+                        reply_input: String::new(),
+                        reply_bulk_input: String::new(),
+                        reply_error: None,
                         language,
                     }
                     .render()
@@ -255,13 +370,19 @@ async fn post_index(
                             tracing::error!(?error, "failed to load schedule");
                             (String::new(), 0, false)
                         });
+                let replies = load_replies(&user.domain, &user.handle)
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::error!(?error, "failed to load replies");
+                        BTreeMap::new()
+                    });
 
                 match add_quotes(&user.domain, &user.handle, quotes).await {
                     Ok(quotes) => Ok(Html(
                         IndexLoginTemplate {
                             user,
                             quotes,
-                            is_bulk_selected: req.is_bulk(),
+                            is_quote_bulk_selected: req.is_bulk(),
                             quote_input: String::new(),
                             quote_bulk_input: String::new(),
                             quote_error: None,
@@ -269,6 +390,12 @@ async fn post_index(
                             cron_error: None,
                             dedup_duration_minutes,
                             suspend_schedule,
+                            is_reply_bulk_selected: false,
+                            replies,
+                            reply_keyword_input: String::new(),
+                            reply_input: String::new(),
+                            reply_bulk_input: String::new(),
+                            reply_error: None,
                             language,
                         }
                         .render()
@@ -276,11 +403,17 @@ async fn post_index(
                     )),
                     Err(error) => {
                         tracing::warn!(?error, "failed to add quotes");
+                        let quotes = load_quotes(&user.domain, &user.handle)
+                            .await
+                            .unwrap_or_else(|error| {
+                                tracing::error!(?error, "failed to load quotes");
+                                BTreeMap::new()
+                            });
                         Ok(Html(
                             IndexLoginTemplate {
                                 user,
-                                quotes: Vec::new(),
-                                is_bulk_selected: req.is_bulk(),
+                                quotes,
+                                is_quote_bulk_selected: req.is_bulk(),
                                 quote_input: req.as_one_by_one(),
                                 quote_bulk_input: req.as_bulk(),
                                 quote_error: Some(TemplateError {
@@ -291,6 +424,12 @@ async fn post_index(
                                 cron_error: None,
                                 dedup_duration_minutes,
                                 suspend_schedule,
+                                is_reply_bulk_selected: false,
+                                replies,
+                                reply_keyword_input: String::new(),
+                                reply_input: String::new(),
+                                reply_bulk_input: String::new(),
+                                reply_error: None,
                                 language,
                             }
                             .render()
@@ -314,7 +453,13 @@ async fn post_index(
                 .await
                 .unwrap_or_else(|error| {
                     tracing::error!(?error, "failed to load quotes");
-                    Vec::new()
+                    BTreeMap::new()
+                });
+            let replies = load_replies(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to load replies");
+                    BTreeMap::new()
                 });
 
             if cron.is_empty() {
@@ -322,7 +467,7 @@ async fn post_index(
                     IndexLoginTemplate {
                         user,
                         quotes,
-                        is_bulk_selected: false,
+                        is_quote_bulk_selected: false,
                         quote_input: String::new(),
                         quote_bulk_input: String::new(),
                         quote_error: None,
@@ -333,6 +478,12 @@ async fn post_index(
                         }),
                         dedup_duration_minutes,
                         suspend_schedule: suspend,
+                        is_reply_bulk_selected: false,
+                        replies,
+                        reply_keyword_input: String::new(),
+                        reply_input: String::new(),
+                        reply_bulk_input: String::new(),
+                        reply_error: None,
                         language,
                     }
                     .render()
@@ -355,7 +506,7 @@ async fn post_index(
                     IndexLoginTemplate {
                         user,
                         quotes,
-                        is_bulk_selected: false,
+                        is_quote_bulk_selected: false,
                         quote_input: String::new(),
                         quote_bulk_input: String::new(),
                         quote_error: None,
@@ -363,6 +514,12 @@ async fn post_index(
                         cron_error: None,
                         dedup_duration_minutes,
                         suspend_schedule: suspend,
+                        is_reply_bulk_selected: false,
+                        replies,
+                        reply_keyword_input: String::new(),
+                        reply_input: String::new(),
+                        reply_bulk_input: String::new(),
+                        reply_error: None,
                         language,
                     }
                     .render()
@@ -374,7 +531,7 @@ async fn post_index(
                         IndexLoginTemplate {
                             user,
                             quotes,
-                            is_bulk_selected: false,
+                            is_quote_bulk_selected: false,
                             quote_input: String::new(),
                             quote_bulk_input: String::new(),
                             quote_error: None,
@@ -385,6 +542,12 @@ async fn post_index(
                             }),
                             dedup_duration_minutes,
                             suspend_schedule: suspend,
+                            is_reply_bulk_selected: false,
+                            replies,
+                            reply_keyword_input: String::new(),
+                            reply_input: String::new(),
+                            reply_bulk_input: String::new(),
+                            reply_error: None,
                             language,
                         }
                         .render()
@@ -394,11 +557,215 @@ async fn post_index(
             }
         }
         (Ok(user), PostIndexReq::DeleteQuote { quote_id }) => {
-            let quotes = delete_quote(&user.domain, &user.handle, &quote_id)
+            let quotes = match delete_quote(&user.domain, &user.handle, quote_id).await {
+                Ok(quotes) => quotes,
+                Err(error) => {
+                    tracing::error!(?error, "failed to delete quotes");
+                    load_quotes(&user.domain, &user.handle)
+                        .await
+                        .unwrap_or_else(|error| {
+                            tracing::error!(?error, "failed to load quotes");
+                            BTreeMap::new()
+                        })
+                }
+            };
+            let (cron_input, dedup_duration_minutes, suspend_schedule) =
+                load_cronjob(&user.domain, &user.handle)
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::error!(?error, "failed to load schedule");
+                        (String::new(), 0, false)
+                    });
+            let replies = load_replies(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to load replies");
+                    BTreeMap::new()
+                });
+
+            Ok(Html(
+                IndexLoginTemplate {
+                    user,
+                    quotes,
+                    is_quote_bulk_selected: false,
+                    quote_input: String::new(),
+                    quote_bulk_input: String::new(),
+                    quote_error: None,
+                    cron_input,
+                    cron_error: None,
+                    dedup_duration_minutes,
+                    suspend_schedule,
+                    is_reply_bulk_selected: false,
+                    replies,
+                    reply_keyword_input: String::new(),
+                    reply_input: String::new(),
+                    reply_bulk_input: String::new(),
+                    reply_error: None,
+                    language,
+                }
+                .render()
+                .unwrap(),
+            ))
+        }
+        (Ok(user), PostIndexReq::AddReply(req)) => {
+            if req.is_empty() {
+                let quotes = load_quotes(&user.domain, &user.handle)
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::error!(?error, "failed to load quotes");
+                        BTreeMap::new()
+                    });
+                let (cron_input, dedup_duration_minutes, suspend_schedule) =
+                    load_cronjob(&user.domain, &user.handle)
+                        .await
+                        .unwrap_or_else(|error| {
+                            tracing::error!(?error, "failed to load schedule");
+                            (String::new(), 0, false)
+                        });
+                let replies = load_replies(&user.domain, &user.handle)
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::error!(?error, "failed to load replies");
+                        BTreeMap::new()
+                    });
+
+                Ok(Html(
+                    IndexLoginTemplate {
+                        user,
+                        quotes,
+                        is_quote_bulk_selected: false,
+                        quote_input: String::new(),
+                        quote_bulk_input: String::new(),
+                        quote_error: None,
+                        cron_input,
+                        cron_error: None,
+                        dedup_duration_minutes,
+                        suspend_schedule,
+                        is_reply_bulk_selected: req.is_bulk(),
+                        replies,
+                        reply_keyword_input: req.keyword(),
+                        reply_input: req.as_one_by_one(),
+                        reply_bulk_input: req.as_bulk(),
+                        reply_error: Some(TemplateError {
+                            summary: t(&language, "value-cannot-empty"),
+                            detail: None,
+                        }),
+                        language,
+                    }
+                    .render()
+                    .unwrap(),
+                ))
+            } else {
+                let (keyword, replies) = match &req {
+                    AddReply::OneByOne { keyword, reply } => {
+                        (keyword.trim().to_string(), vec![reply.trim().to_string()])
+                    }
+                    AddReply::Bulk {
+                        keyword,
+                        reply_bulk,
+                    } => (
+                        keyword.trim().to_string(),
+                        reply_bulk
+                            .lines()
+                            .filter(|s| !s.is_empty())
+                            .map(|s| s.trim().to_string())
+                            .collect(),
+                    ),
+                };
+                let quotes = load_quotes(&user.domain, &user.handle)
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::error!(?error, "failed to load quotes");
+                        BTreeMap::new()
+                    });
+                let (cron_input, dedup_duration_minutes, suspend_schedule) =
+                    load_cronjob(&user.domain, &user.handle)
+                        .await
+                        .unwrap_or_else(|error| {
+                            tracing::error!(?error, "failed to load schedule");
+                            (String::new(), 0, false)
+                        });
+
+                match add_replies(&user.domain, &user.handle, keyword, replies).await {
+                    Ok(replies) => Ok(Html(
+                        IndexLoginTemplate {
+                            user,
+                            quotes,
+                            is_quote_bulk_selected: false,
+                            quote_input: String::new(),
+                            quote_bulk_input: String::new(),
+                            quote_error: None,
+                            cron_input,
+                            cron_error: None,
+                            dedup_duration_minutes,
+                            suspend_schedule,
+                            is_reply_bulk_selected: req.is_bulk(),
+                            replies,
+                            reply_keyword_input: String::new(),
+                            reply_input: String::new(),
+                            reply_bulk_input: String::new(),
+                            reply_error: None,
+                            language,
+                        }
+                        .render()
+                        .unwrap(),
+                    )),
+                    Err(error) => {
+                        tracing::warn!(?error, "failed to add replies");
+                        let replies = load_replies(&user.domain, &user.handle)
+                            .await
+                            .unwrap_or_else(|error| {
+                                tracing::error!(?error, "failed to load replies");
+                                BTreeMap::new()
+                            });
+                        Ok(Html(
+                            IndexLoginTemplate {
+                                user,
+                                quotes,
+                                is_quote_bulk_selected: false,
+                                quote_input: String::new(),
+                                quote_bulk_input: String::new(),
+                                quote_error: None,
+                                cron_input,
+                                cron_error: None,
+                                dedup_duration_minutes,
+                                suspend_schedule,
+                                is_reply_bulk_selected: req.is_bulk(),
+                                replies,
+                                reply_keyword_input: req.keyword(),
+                                reply_input: req.as_one_by_one(),
+                                reply_bulk_input: req.as_bulk(),
+                                reply_error: Some(TemplateError {
+                                    summary: t(&language, "add-reply-error"),
+                                    detail: Some(format!("{error:?}")),
+                                }),
+                                language,
+                            }
+                            .render()
+                            .unwrap(),
+                        ))
+                    }
+                }
+            }
+        }
+        (Ok(user), PostIndexReq::DeleteReply { keyword, reply_id }) => {
+            let replies = match delete_reply(&user.domain, &user.handle, keyword, reply_id).await {
+                Ok(replies) => replies,
+                Err(error) => {
+                    tracing::error!(?error, "failed to delete reply");
+                    load_replies(&user.domain, &user.handle)
+                        .await
+                        .unwrap_or_else(|error| {
+                            tracing::error!(?error, "failed to load replies");
+                            BTreeMap::new()
+                        })
+                }
+            };
+            let quotes = load_quotes(&user.domain, &user.handle)
                 .await
                 .unwrap_or_else(|error| {
                     tracing::error!(?error, "failed to load quotes");
-                    Vec::new()
+                    BTreeMap::new()
                 });
             let (cron_input, dedup_duration_minutes, suspend_schedule) =
                 load_cronjob(&user.domain, &user.handle)
@@ -412,7 +779,7 @@ async fn post_index(
                 IndexLoginTemplate {
                     user,
                     quotes,
-                    is_bulk_selected: false,
+                    is_quote_bulk_selected: false,
                     quote_input: String::new(),
                     quote_bulk_input: String::new(),
                     quote_error: None,
@@ -420,20 +787,17 @@ async fn post_index(
                     cron_error: None,
                     dedup_duration_minutes,
                     suspend_schedule,
+                    is_reply_bulk_selected: false,
+                    replies,
+                    reply_keyword_input: String::new(),
+                    reply_input: String::new(),
+                    reply_bulk_input: String::new(),
+                    reply_error: None,
                     language,
                 }
                 .render()
                 .unwrap(),
             ))
         }
-        _ => Ok(Html(
-            IndexLogoutTemplate {
-                language,
-                domain: String::new(),
-                domain_error: None,
-            }
-            .render()
-            .unwrap(),
-        )),
     }
 }
