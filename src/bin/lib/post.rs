@@ -18,16 +18,23 @@ pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
         .expect("failed to build HTTP client")
 });
 
-#[derive(Serialize)]
-struct PostMastodonReq<'a> {
-    status: &'a str,
-    visibility: &'a str,
-}
+pub async fn post_mastodon(
+    domain: &str,
+    access_token: &str,
+    quote: &str,
+    reply_id: Option<String>,
+) -> eyre::Result<()> {
+    #[derive(Serialize)]
+    struct Req<'a> {
+        status: &'a str,
+        visibility: &'a str,
+        in_reply_to_id: Option<String>,
+    }
 
-pub async fn post_mastodon(domain: &str, access_token: &str, quote: &str) -> eyre::Result<()> {
-    let req = PostMastodonReq {
+    let req = Req {
         status: quote,
         visibility: "unlisted",
+        in_reply_to_id: reply_id,
     };
     let url = format!("https://{domain}/api/v1/statuses");
     let resp = HTTP_CLIENT

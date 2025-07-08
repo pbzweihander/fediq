@@ -73,11 +73,42 @@ async fn stream_mastodon(
     reply_map: BTreeMap<String, BTreeMap<Ulid, String>>,
     rng: &mut impl rand::Rng,
 ) -> eyre::Result<()> {
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Event {
+        event: String,
+        payload: String,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Account {
+        acct: String,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Status {
+        id: String,
+        content: String,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(tag = "type", rename_all = "camelCase")]
+    enum EventInner {
+        Mention {
+            account: Account,
+            status: Status,
+        },
+        #[serde(other)]
+        Unknown,
+    }
+
     let resp = post::HTTP_CLIENT
         .get(format!(
             "wss://{domain}/api/v1/streaming?stream=user:notification"
         ))
-        .bearer_auth(access_token)
+        .bearer_auth(&access_token)
         .upgrade()
         .send()
         .await
@@ -92,7 +123,32 @@ async fn stream_mastodon(
         .transpose()
         .context("failed to get message")?
     {
-        println!("{message:#?}");
+        if let reqwest_websocket::Message::Text(payload) = message {
+            if let Ok(Event { event, payload }) = serde_json::from_str::<Event>(&payload) {
+                if event == "notification" {
+                    if let Ok(EventInner::Mention { account, status }) =
+                        serde_json::from_str::<EventInner>(&payload)
+                    {
+                        tracing::info!(?account, ?status, "got mention");
+                        if let Some(reply) = get_reply(status.content, &reply_map, rng) {
+                            tracing::info!(reply, "replying");
+                            if let Err(error) = post::post_mastodon(
+                                &domain,
+                                &access_token,
+                                &format!("@{} {}", account.acct, reply),
+                                Some(status.id),
+                            )
+                            .await
+                            {
+                                tracing::error!(?error, "failed to post to Misskey");
+                            }
+                        } else {
+                            tracing::info!("no match");
+                        }
+                    }
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -178,7 +234,7 @@ async fn stream_misskey(
             }) = serde_json::from_str::<Message>(&payload)
             {
                 if rx_channel_id == channel_id.to_string() {
-                    tracing::info!(text, "got mention");
+                    tracing::info!(?user, text, "got mention");
                     if let Some(reply) = get_reply(text, &reply_map, rng) {
                         tracing::info!(reply, "replying");
                         if let Err(error) = post::post_misskey(

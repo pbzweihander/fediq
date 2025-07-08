@@ -118,7 +118,7 @@ async fn get_auth_redirect_url_mastodon(domain: &str) -> eyre::Result<Url> {
                 "fediq.pbzweihander.dev"
             },
             redirect_uris: &redirect_url,
-            scopes: "read:accounts write:statuses",
+            scopes: "read:accounts write:statuses read:notifications",
             website: CONFIG.public_url.clone(),
         };
         let url = format!("https://{domain}/api/v1/apps");
@@ -146,7 +146,7 @@ async fn get_auth_redirect_url_mastodon(domain: &str) -> eyre::Result<Url> {
 
     let client_id = app.client_id;
 
-    let url = Url::from_str(&format!("https://{domain}/oauth/authorize?response_type=code&client_id={client_id}&redirect_uri={redirect_url}&scope=read:accounts+write:statuses"))
+    let url = Url::from_str(&format!("https://{domain}/oauth/authorize?response_type=code&client_id={client_id}&redirect_uri={redirect_url}&scope=read:accounts+write:statuses+read:notifications"))
         .context("failed to generate URL")?;
     Ok(url)
 }

@@ -86,7 +86,7 @@ async fn main() {
     };
 
     match config.software.as_str() {
-        "mastodon" => post::post_mastodon(&config.domain, &config.access_token, &quote)
+        "mastodon" => post::post_mastodon(&config.domain, &config.access_token, &quote, None)
             .await
             .expect("failed to post to Mastodon"),
         "misskey" => post::post_misskey(&config.domain, &config.access_token, &quote, None)
