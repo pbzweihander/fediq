@@ -43,6 +43,10 @@ spec:
               value: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
             - name: POSTER_SERVICEACCOUNT_NAME
               value: {{ include "fediq.fullname" . }}-poster
+            - name: STREAMING_CONTAINER_IMAGE
+              value: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+            - name: STREAMING_SERVICEACCOUNT_NAME
+              value: {{ include "fediq.fullname" . }}-streaming
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
