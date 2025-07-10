@@ -330,6 +330,7 @@
           <div class="chat-bubble chat-bubble-info indicator py-2">
             <form class="indicator-item rounded-full bg-error" method="post">
               <input type="hidden" name="type" value="delete_reply" />
+              <input type="hidden" name="keyword" value="{{ keyword }}" />
               <input type="hidden" name="reply_id" value="{{ id }}" />
               <label class="cursor-pointer">
                 <input type="submit" class="hidden" value="" />
