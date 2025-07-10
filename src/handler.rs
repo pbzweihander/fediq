@@ -14,13 +14,7 @@ use serde::Deserialize;
 use ulid::Ulid;
 
 use crate::{
-    api::{
-        fediverse::get_auth_redirect_url,
-        kube::{
-            add_quotes, add_replies, delete_quote, delete_reply, disable_reply, enable_reply,
-            get_reply_enabled, load_cronjob, load_quotes, load_replies, save_cronjob,
-        },
-    },
+    api::{fediverse::get_auth_redirect_url, kube::*},
     internationalization::t,
 };
 
@@ -87,6 +81,12 @@ async fn get_index(Language(language): Language, user: Result<FediverseUser, ()>
                 tracing::error!(?error, "failed to get reply enabled");
                 false
             });
+        let enable_dice_feature = get_dice_feature_enabled(&user.domain, &user.handle)
+            .await
+            .unwrap_or_else(|error| {
+                tracing::error!(?error, "failed to get dice feature enabled");
+                false
+            });
 
         Html(
             IndexLoginTemplate {
@@ -109,6 +109,7 @@ async fn get_index(Language(language): Language, user: Result<FediverseUser, ()>
                 reply_input: String::new(),
                 reply_bulk_input: String::new(),
                 reply_error: None,
+                enable_dice_feature,
             }
             .render()
             .unwrap(),
@@ -264,6 +265,8 @@ enum PostIndexReq {
     ConfigureReply {
         #[serde(default)]
         enable: String,
+        #[serde(default)]
+        dice_feature: String,
     },
 }
 
@@ -319,6 +322,32 @@ async fn post_index(
             .unwrap(),
         )),
         (Ok(user), PostIndexReq::AddQuote(req)) => {
+            let (cron_input, dedup_duration_minutes, suspend_schedule) =
+                load_cronjob(&user.domain, &user.handle)
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::error!(?error, "failed to load schedule");
+                        (String::new(), 0, false)
+                    });
+            let reply_map = load_replies(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to load replies");
+                    BTreeMap::new()
+                });
+            let enable_reply = get_reply_enabled(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to get reply enabled");
+                    false
+                });
+            let enable_dice_feature = get_dice_feature_enabled(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to get dice feature enabled");
+                    false
+                });
+
             if req.is_empty() {
                 let quotes = load_quotes(&user.domain, &user.handle)
                     .await
@@ -326,27 +355,8 @@ async fn post_index(
                         tracing::error!(?error, "failed to load quotes");
                         BTreeMap::new()
                     });
-                let (cron_input, dedup_duration_minutes, suspend_schedule) =
-                    load_cronjob(&user.domain, &user.handle)
-                        .await
-                        .unwrap_or_else(|error| {
-                            tracing::error!(?error, "failed to load schedule");
-                            (String::new(), 0, false)
-                        });
-                let reply_map = load_replies(&user.domain, &user.handle)
-                    .await
-                    .unwrap_or_else(|error| {
-                        tracing::error!(?error, "failed to load replies");
-                        BTreeMap::new()
-                    });
-                let enable_reply = get_reply_enabled(&user.domain, &user.handle)
-                    .await
-                    .unwrap_or_else(|error| {
-                        tracing::error!(?error, "failed to get reply enabled");
-                        false
-                    });
 
-                Ok(Html(
+                return Ok(Html(
                     IndexLoginTemplate {
                         user,
                         quote_mode_selected: true,
@@ -370,49 +380,68 @@ async fn post_index(
                         reply_bulk_input: String::new(),
                         reply_error: None,
                         language,
+                        enable_dice_feature,
                     }
                     .render()
                     .unwrap(),
-                ))
-            } else {
-                let quotes = match &req {
-                    AddQuote::OneByOne { quote } => vec![quote.trim().to_string()],
-                    AddQuote::Bulk { quote_bulk } => quote_bulk
-                        .lines()
-                        .filter(|s| !s.is_empty())
-                        .map(|s| s.trim().to_string())
-                        .collect(),
-                };
-                let (cron_input, dedup_duration_minutes, suspend_schedule) =
-                    load_cronjob(&user.domain, &user.handle)
+                ));
+            }
+            let quotes = match &req {
+                AddQuote::OneByOne { quote } => vec![quote.trim().to_string()],
+                AddQuote::Bulk { quote_bulk } => quote_bulk
+                    .lines()
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.trim().to_string())
+                    .collect(),
+            };
+
+            match add_quotes(&user.domain, &user.handle, quotes).await {
+                Ok(quotes) => Ok(Html(
+                    IndexLoginTemplate {
+                        user,
+                        quote_mode_selected: true,
+                        quotes,
+                        is_quote_bulk_selected: req.is_bulk(),
+                        quote_input: String::new(),
+                        quote_bulk_input: String::new(),
+                        quote_error: None,
+                        cron_input,
+                        cron_error: None,
+                        dedup_duration_minutes,
+                        suspend_schedule,
+                        enable_reply,
+                        is_reply_bulk_selected: false,
+                        reply_map,
+                        reply_keyword_input: String::new(),
+                        reply_input: String::new(),
+                        reply_bulk_input: String::new(),
+                        reply_error: None,
+                        language,
+                        enable_dice_feature,
+                    }
+                    .render()
+                    .unwrap(),
+                )),
+                Err(error) => {
+                    tracing::warn!(?error, "failed to add quotes");
+                    let quotes = load_quotes(&user.domain, &user.handle)
                         .await
                         .unwrap_or_else(|error| {
-                            tracing::error!(?error, "failed to load schedule");
-                            (String::new(), 0, false)
+                            tracing::error!(?error, "failed to load quotes");
+                            BTreeMap::new()
                         });
-                let reply_map = load_replies(&user.domain, &user.handle)
-                    .await
-                    .unwrap_or_else(|error| {
-                        tracing::error!(?error, "failed to load replies");
-                        BTreeMap::new()
-                    });
-                let enable_reply = get_reply_enabled(&user.domain, &user.handle)
-                    .await
-                    .unwrap_or_else(|error| {
-                        tracing::error!(?error, "failed to get reply enabled");
-                        false
-                    });
-
-                match add_quotes(&user.domain, &user.handle, quotes).await {
-                    Ok(quotes) => Ok(Html(
+                    Ok(Html(
                         IndexLoginTemplate {
                             user,
                             quote_mode_selected: true,
                             quotes,
                             is_quote_bulk_selected: req.is_bulk(),
-                            quote_input: String::new(),
-                            quote_bulk_input: String::new(),
-                            quote_error: None,
+                            quote_input: req.as_one_by_one(),
+                            quote_bulk_input: req.as_bulk(),
+                            quote_error: Some(TemplateError {
+                                summary: t(&language, "add-quote-error"),
+                                detail: Some(format!("{error:?}")),
+                            }),
                             cron_input,
                             cron_error: None,
                             dedup_duration_minutes,
@@ -425,47 +454,11 @@ async fn post_index(
                             reply_bulk_input: String::new(),
                             reply_error: None,
                             language,
+                            enable_dice_feature,
                         }
                         .render()
                         .unwrap(),
-                    )),
-                    Err(error) => {
-                        tracing::warn!(?error, "failed to add quotes");
-                        let quotes = load_quotes(&user.domain, &user.handle)
-                            .await
-                            .unwrap_or_else(|error| {
-                                tracing::error!(?error, "failed to load quotes");
-                                BTreeMap::new()
-                            });
-                        Ok(Html(
-                            IndexLoginTemplate {
-                                user,
-                                quote_mode_selected: true,
-                                quotes,
-                                is_quote_bulk_selected: req.is_bulk(),
-                                quote_input: req.as_one_by_one(),
-                                quote_bulk_input: req.as_bulk(),
-                                quote_error: Some(TemplateError {
-                                    summary: t(&language, "add-quote-error"),
-                                    detail: Some(format!("{error:?}")),
-                                }),
-                                cron_input,
-                                cron_error: None,
-                                dedup_duration_minutes,
-                                suspend_schedule,
-                                enable_reply,
-                                is_reply_bulk_selected: false,
-                                reply_map,
-                                reply_keyword_input: String::new(),
-                                reply_input: String::new(),
-                                reply_bulk_input: String::new(),
-                                reply_error: None,
-                                language,
-                            }
-                            .render()
-                            .unwrap(),
-                        ))
-                    }
+                    ))
                 }
             }
         }
@@ -497,6 +490,12 @@ async fn post_index(
                     tracing::error!(?error, "failed to get reply enabled");
                     false
                 });
+            let enable_dice_feature = get_dice_feature_enabled(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to get dice feature enabled");
+                    false
+                });
 
             if cron.is_empty() {
                 return Ok(Html(
@@ -523,6 +522,7 @@ async fn post_index(
                         reply_bulk_input: String::new(),
                         reply_error: None,
                         language,
+                        enable_dice_feature,
                     }
                     .render()
                     .unwrap(),
@@ -561,6 +561,7 @@ async fn post_index(
                         reply_bulk_input: String::new(),
                         reply_error: None,
                         language,
+                        enable_dice_feature,
                     }
                     .render()
                     .unwrap(),
@@ -591,6 +592,7 @@ async fn post_index(
                             reply_bulk_input: String::new(),
                             reply_error: None,
                             language,
+                            enable_dice_feature,
                         }
                         .render()
                         .unwrap(),
@@ -630,6 +632,12 @@ async fn post_index(
                     tracing::error!(?error, "failed to get reply enabled");
                     false
                 });
+            let enable_dice_feature = get_dice_feature_enabled(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to get dice feature enabled");
+                    false
+                });
 
             Ok(Html(
                 IndexLoginTemplate {
@@ -652,40 +660,48 @@ async fn post_index(
                     reply_bulk_input: String::new(),
                     reply_error: None,
                     language,
+                    enable_dice_feature,
                 }
                 .render()
                 .unwrap(),
             ))
         }
         (Ok(user), PostIndexReq::AddReply(req)) => {
-            if req.is_empty() {
-                let quotes = load_quotes(&user.domain, &user.handle)
+            let quotes = load_quotes(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to load quotes");
+                    BTreeMap::new()
+                });
+            let (cron_input, dedup_duration_minutes, suspend_schedule) =
+                load_cronjob(&user.domain, &user.handle)
                     .await
                     .unwrap_or_else(|error| {
-                        tracing::error!(?error, "failed to load quotes");
-                        BTreeMap::new()
+                        tracing::error!(?error, "failed to load schedule");
+                        (String::new(), 0, false)
                     });
-                let (cron_input, dedup_duration_minutes, suspend_schedule) =
-                    load_cronjob(&user.domain, &user.handle)
-                        .await
-                        .unwrap_or_else(|error| {
-                            tracing::error!(?error, "failed to load schedule");
-                            (String::new(), 0, false)
-                        });
+            let enable_reply = get_reply_enabled(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to get reply enabled");
+                    false
+                });
+            let enable_dice_feature = get_dice_feature_enabled(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to get dice feature enabled");
+                    false
+                });
+
+            if req.is_empty() {
                 let reply_map = load_replies(&user.domain, &user.handle)
                     .await
                     .unwrap_or_else(|error| {
                         tracing::error!(?error, "failed to load replies");
                         BTreeMap::new()
                     });
-                let enable_reply = get_reply_enabled(&user.domain, &user.handle)
-                    .await
-                    .unwrap_or_else(|error| {
-                        tracing::error!(?error, "failed to get reply enabled");
-                        false
-                    });
 
-                Ok(Html(
+                return Ok(Html(
                     IndexLoginTemplate {
                         user,
                         quote_mode_selected: false,
@@ -709,49 +725,65 @@ async fn post_index(
                             detail: None,
                         }),
                         language,
+                        enable_dice_feature,
                     }
                     .render()
                     .unwrap(),
-                ))
-            } else {
-                let (keyword, replies) = match &req {
-                    AddReply::OneByOne { keyword, reply } => {
-                        (keyword.trim().to_string(), vec![reply.trim().to_string()])
+                ));
+            }
+            let (keyword, replies) = match &req {
+                AddReply::OneByOne { keyword, reply } => {
+                    (keyword.trim().to_string(), vec![reply.trim().to_string()])
+                }
+                AddReply::Bulk {
+                    keyword,
+                    reply_bulk,
+                } => (
+                    keyword.trim().to_string(),
+                    reply_bulk
+                        .lines()
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.trim().to_string())
+                        .collect(),
+                ),
+            };
+
+            match add_replies(&user.domain, &user.handle, keyword, replies).await {
+                Ok(reply_map) => Ok(Html(
+                    IndexLoginTemplate {
+                        user,
+                        quote_mode_selected: false,
+                        quotes,
+                        is_quote_bulk_selected: false,
+                        quote_input: String::new(),
+                        quote_bulk_input: String::new(),
+                        quote_error: None,
+                        cron_input,
+                        cron_error: None,
+                        dedup_duration_minutes,
+                        suspend_schedule,
+                        enable_reply,
+                        is_reply_bulk_selected: req.is_bulk(),
+                        reply_map,
+                        reply_keyword_input: req.keyword(),
+                        reply_input: String::new(),
+                        reply_bulk_input: String::new(),
+                        reply_error: None,
+                        language,
+                        enable_dice_feature,
                     }
-                    AddReply::Bulk {
-                        keyword,
-                        reply_bulk,
-                    } => (
-                        keyword.trim().to_string(),
-                        reply_bulk
-                            .lines()
-                            .filter(|s| !s.is_empty())
-                            .map(|s| s.trim().to_string())
-                            .collect(),
-                    ),
-                };
-                let quotes = load_quotes(&user.domain, &user.handle)
-                    .await
-                    .unwrap_or_else(|error| {
-                        tracing::error!(?error, "failed to load quotes");
-                        BTreeMap::new()
-                    });
-                let (cron_input, dedup_duration_minutes, suspend_schedule) =
-                    load_cronjob(&user.domain, &user.handle)
+                    .render()
+                    .unwrap(),
+                )),
+                Err(error) => {
+                    tracing::warn!(?error, "failed to add replies");
+                    let reply_map = load_replies(&user.domain, &user.handle)
                         .await
                         .unwrap_or_else(|error| {
-                            tracing::error!(?error, "failed to load schedule");
-                            (String::new(), 0, false)
+                            tracing::error!(?error, "failed to load replies");
+                            BTreeMap::new()
                         });
-                let enable_reply = get_reply_enabled(&user.domain, &user.handle)
-                    .await
-                    .unwrap_or_else(|error| {
-                        tracing::error!(?error, "failed to get reply enabled");
-                        false
-                    });
-
-                match add_replies(&user.domain, &user.handle, keyword, replies).await {
-                    Ok(reply_map) => Ok(Html(
+                    Ok(Html(
                         IndexLoginTemplate {
                             user,
                             quote_mode_selected: false,
@@ -768,51 +800,18 @@ async fn post_index(
                             is_reply_bulk_selected: req.is_bulk(),
                             reply_map,
                             reply_keyword_input: req.keyword(),
-                            reply_input: String::new(),
-                            reply_bulk_input: String::new(),
-                            reply_error: None,
+                            reply_input: req.as_one_by_one(),
+                            reply_bulk_input: req.as_bulk(),
+                            reply_error: Some(TemplateError {
+                                summary: t(&language, "add-reply-error"),
+                                detail: Some(format!("{error:?}")),
+                            }),
                             language,
+                            enable_dice_feature,
                         }
                         .render()
                         .unwrap(),
-                    )),
-                    Err(error) => {
-                        tracing::warn!(?error, "failed to add replies");
-                        let reply_map = load_replies(&user.domain, &user.handle)
-                            .await
-                            .unwrap_or_else(|error| {
-                                tracing::error!(?error, "failed to load replies");
-                                BTreeMap::new()
-                            });
-                        Ok(Html(
-                            IndexLoginTemplate {
-                                user,
-                                quote_mode_selected: false,
-                                quotes,
-                                is_quote_bulk_selected: false,
-                                quote_input: String::new(),
-                                quote_bulk_input: String::new(),
-                                quote_error: None,
-                                cron_input,
-                                cron_error: None,
-                                dedup_duration_minutes,
-                                suspend_schedule,
-                                enable_reply,
-                                is_reply_bulk_selected: req.is_bulk(),
-                                reply_map,
-                                reply_keyword_input: req.keyword(),
-                                reply_input: req.as_one_by_one(),
-                                reply_bulk_input: req.as_bulk(),
-                                reply_error: Some(TemplateError {
-                                    summary: t(&language, "add-reply-error"),
-                                    detail: Some(format!("{error:?}")),
-                                }),
-                                language,
-                            }
-                            .render()
-                            .unwrap(),
-                        ))
-                    }
+                    ))
                 }
             }
         }
@@ -849,6 +848,12 @@ async fn post_index(
                     tracing::error!(?error, "failed to get reply enabled");
                     false
                 });
+            let enable_dice_feature = get_dice_feature_enabled(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to get dice feature enabled");
+                    false
+                });
 
             Ok(Html(
                 IndexLoginTemplate {
@@ -871,12 +876,19 @@ async fn post_index(
                     reply_bulk_input: String::new(),
                     reply_error: None,
                     language,
+                    enable_dice_feature,
                 }
                 .render()
                 .unwrap(),
             ))
         }
-        (Ok(user), PostIndexReq::ConfigureReply { enable }) => {
+        (
+            Ok(user),
+            PostIndexReq::ConfigureReply {
+                enable,
+                dice_feature,
+            },
+        ) => {
             if enable == "on" {
                 if let Err(error) = enable_reply(
                     &user.domain,
@@ -891,6 +903,14 @@ async fn post_index(
             } else if let Err(error) = disable_reply(&user.domain, &user.handle).await {
                 tracing::error!(?error, "failed to disable reply");
             }
+            if dice_feature == "on" {
+                if let Err(error) = enable_dice_feature(&user.domain, &user.handle).await {
+                    tracing::error!(?error, "failed to enable dice feature");
+                }
+            } else if let Err(error) = disable_dice_feature(&user.domain, &user.handle).await {
+                tracing::error!(?error, "failed to disable dice feature");
+            }
+
             let quotes = load_quotes(&user.domain, &user.handle)
                 .await
                 .unwrap_or_else(|error| {
@@ -916,6 +936,12 @@ async fn post_index(
                     tracing::error!(?error, "failed to get reply enabled");
                     false
                 });
+            let enable_dice_feature = get_dice_feature_enabled(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to get dice feature enabled");
+                    false
+                });
 
             Ok(Html(
                 IndexLoginTemplate {
@@ -938,6 +964,7 @@ async fn post_index(
                     reply_input: String::new(),
                     reply_bulk_input: String::new(),
                     reply_error: None,
+                    enable_dice_feature,
                 }
                 .render()
                 .unwrap(),

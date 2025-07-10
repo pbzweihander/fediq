@@ -291,6 +291,12 @@
               %} />
             {{ language|t("enable") }}
           </label>
+          <label class="label mt-4 whitespace-normal">{{ language|t("dice-feature-guide") }}</label>
+          <label class="label cursor-pointer">
+            <input type="checkbox" class="toggle toggle-secondary" name="dice_feature" {% if enable_dice_feature
+              %}checked{% endif %} />
+            {{ language|t("dice-feature") }}
+          </label>
           <div class="flex justify-center w-full mt-5">
             {% let t_save = self::t(language, "save") %}
             <input type="submit" class="btn btn-primary max-w-3xs w-full" value="{{ t_save }}" />

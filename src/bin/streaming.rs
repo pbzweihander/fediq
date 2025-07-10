@@ -1,10 +1,11 @@
 #[path = "lib/post.rs"]
 mod post;
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::LazyLock};
 
 use eyre::Context;
 use futures_util::{SinkExt, StreamExt};
+use itertools::Itertools;
 use k8s_openapi::api::core::v1::ConfigMap;
 use kube::Api;
 use rand::seq::IteratorRandom;
@@ -42,13 +43,20 @@ async fn main() {
         .expect("failed to initialize Kubernetes client");
     let configmap_api = Api::<ConfigMap>::default_namespaced(kube_client);
 
-    let replies_configmap_data = configmap_api
+    let replies_configmap = configmap_api
         .get(&config.replies_configmap_name)
         .await
-        .expect("failed to get replies Kubernetes ConfigMap")
-        .data
+        .expect("failed to get replies Kubernetes ConfigMap");
+    let dice_feature = replies_configmap
+        .metadata
+        .annotations
+        .unwrap_or_default()
+        .get("fediq.pbzweihander.dev/dice-feature")
+        .map(|v| v == "true")
         .unwrap_or_default();
-    let reply_map = replies_configmap_data
+    let reply_map = replies_configmap
+        .data
+        .unwrap_or_default()
         .get("data")
         .and_then(|v| serde_json::from_str::<BTreeMap<String, BTreeMap<Ulid, String>>>(v).ok())
         .expect("no reply data found");
@@ -57,12 +65,24 @@ async fn main() {
     }
 
     match config.software.as_ref() {
-        "mastodon" => stream_mastodon(config.domain, config.access_token, reply_map, &mut rng)
-            .await
-            .expect("failed to stream Mastodon"),
-        "misskey" => stream_misskey(config.domain, config.access_token, reply_map, &mut rng)
-            .await
-            .expect("failed to stream Misskey"),
+        "mastodon" => stream_mastodon(
+            config.domain,
+            config.access_token,
+            reply_map,
+            dice_feature,
+            &mut rng,
+        )
+        .await
+        .expect("failed to stream Mastodon"),
+        "misskey" => stream_misskey(
+            config.domain,
+            config.access_token,
+            reply_map,
+            dice_feature,
+            &mut rng,
+        )
+        .await
+        .expect("failed to stream Misskey"),
         software => panic!("unsupported software `{software}`"),
     }
 }
@@ -71,6 +91,7 @@ async fn stream_mastodon(
     domain: String,
     access_token: String,
     reply_map: BTreeMap<String, BTreeMap<Ulid, String>>,
+    dice_feature: bool,
     rng: &mut impl rand::Rng,
 ) -> eyre::Result<()> {
     #[derive(Debug, Deserialize)]
@@ -130,7 +151,7 @@ async fn stream_mastodon(
                         serde_json::from_str::<EventInner>(&payload)
                     {
                         tracing::info!(?account, ?status, "got mention");
-                        if let Some(reply) = get_reply(status.content, &reply_map, rng) {
+                        if let Some(reply) = get_reply(&status.content, &reply_map, rng) {
                             tracing::info!(reply, "replying");
                             if let Err(error) = post::post_mastodon(
                                 &domain,
@@ -140,11 +161,30 @@ async fn stream_mastodon(
                             )
                             .await
                             {
-                                tracing::error!(?error, "failed to post to Misskey");
+                                tracing::error!(?error, "failed to post reply to Mastodon");
                             }
-                        } else {
-                            tracing::info!("no match");
+                            continue;
                         }
+                        if dice_feature {
+                            if let Some(dice_result) = get_dice(&status.content, rng) {
+                                tracing::info!(dice_result, "replying dice result");
+                                if let Err(error) = post::post_mastodon(
+                                    &domain,
+                                    &access_token,
+                                    &format!("@{} {}", account.acct, dice_result),
+                                    Some(status.id),
+                                )
+                                .await
+                                {
+                                    tracing::error!(
+                                        ?error,
+                                        "failed to post dice result to Mastodon"
+                                    );
+                                }
+                                continue;
+                            }
+                        }
+                        tracing::info!("no match");
                     }
                 }
             }
@@ -157,6 +197,7 @@ async fn stream_misskey(
     domain: String,
     access_token: String,
     reply_map: BTreeMap<String, BTreeMap<Ulid, String>>,
+    dice_feature: bool,
     rng: &mut impl rand::Rng,
 ) -> eyre::Result<()> {
     #[derive(Debug, Deserialize, Serialize)]
@@ -235,21 +276,37 @@ async fn stream_misskey(
             {
                 if rx_channel_id == channel_id.to_string() {
                     tracing::info!(?user, text, "got mention");
-                    if let Some(reply) = get_reply(text, &reply_map, rng) {
+                    if let Some(reply) = get_reply(&text, &reply_map, rng) {
                         tracing::info!(reply, "replying");
                         if let Err(error) = post::post_misskey(
                             &domain,
                             &access_token,
                             &format!("@{}@{} {}", user.username, user.host, reply),
-                            Some(note_id),
+                            Some(note_id.clone()),
                         )
                         .await
                         {
                             tracing::error!(?error, "failed to post to Misskey");
+                            continue;
                         }
-                    } else {
-                        tracing::info!("no match");
                     }
+                    if dice_feature {
+                        if let Some(dice_result) = get_dice(&text, rng) {
+                            tracing::info!(dice_result, "replying dice result");
+                            if let Err(error) = post::post_misskey(
+                                &domain,
+                                &access_token,
+                                &format!("@{}@{} {}", user.username, user.host, dice_result),
+                                Some(note_id),
+                            )
+                            .await
+                            {
+                                tracing::error!(?error, "failed to post dice result to Mastodon");
+                            }
+                            continue;
+                        }
+                    }
+                    tracing::info!("no match");
                 }
             }
         }
@@ -258,7 +315,7 @@ async fn stream_misskey(
 }
 
 fn get_reply(
-    text: String,
+    text: &str,
     reply_map: &BTreeMap<String, BTreeMap<Ulid, String>>,
     rng: &mut impl rand::Rng,
 ) -> Option<String> {
@@ -268,4 +325,35 @@ fn get_reply(
         }
     }
     None
+}
+
+fn get_dice(text: &str, rng: &mut impl rand::Rng) -> Option<String> {
+    static DICE_REGEX: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"(\d+)d(\d+)").expect("failed to build regex"));
+    if let Some(captures) = DICE_REGEX.captures(text) {
+        let n = captures.get(1)?.as_str().parse::<usize>().ok()?;
+        let m = captures.get(2)?.as_str().parse::<usize>().ok()?;
+        if n == 0 || m == 0 {
+            return None;
+        }
+
+        let mut list = Vec::new();
+        for _i in 0..n {
+            let result = rng.random_range(1..=m);
+            list.push(result);
+        }
+        let sum = list.iter().sum::<usize>();
+
+        if n <= 10 && m <= 100 {
+            Some(format!(
+                "{} = {}",
+                list.iter().map(usize::to_string).join(" + "),
+                sum
+            ))
+        } else {
+            Some(format!("{sum}"))
+        }
+    } else {
+        None
+    }
 }

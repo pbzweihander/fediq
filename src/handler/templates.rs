@@ -55,6 +55,7 @@ pub struct IndexLoginTemplate {
     pub reply_input: String,
     pub reply_bulk_input: String,
     pub reply_error: Option<TemplateError>,
+    pub enable_dice_feature: bool,
 }
 
 #[derive(Template)]

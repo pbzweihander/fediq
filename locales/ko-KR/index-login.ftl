@@ -23,6 +23,9 @@ suspend = 일시정지
 enable = 활성화
 save = 저장
 
+dice-feature = 다이스 기능
+dice-feature-guide = 2d6와 같은 ndm 형태의 멘션을 받으면 주사위를 굴린 결과를 답변합니다.
+
 cron-expression = cron 표현식
 what-is-cron-expression = cron 표현식이 뭔가요?
 cron-expression-guide = cron 표현식은 반복되는 일정을 나타내는 표현식입니다.

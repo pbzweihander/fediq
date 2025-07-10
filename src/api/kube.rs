@@ -25,6 +25,7 @@ use crate::config::CONFIG;
 use super::fediverse::FediverseApp;
 
 const DEDUP_DURATION_MINUTES_ANNOTATION_KEY: &str = "fediq.pbzweihander.dev/dedup-duration-minutes";
+const DICE_FEATURE_ANNOTATION_KEY: &str = "fediq.pbzweihander.dev/dice-feature";
 
 async fn client() -> eyre::Result<kube::Client> {
     static CLIENT: OnceCell<kube::Client> = OnceCell::new();
@@ -517,6 +518,14 @@ pub async fn add_replies(
                 "failed to get replies Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
             )
         })?;
+    let annotations = replies_configmap
+        .as_ref()
+        .and_then(|cm| cm.metadata.annotations.clone())
+        .unwrap_or_else(|| {
+            let mut annotation = BTreeMap::new();
+            annotation.insert(DICE_FEATURE_ANNOTATION_KEY.to_string(), "false".to_string());
+            annotation
+        });
     let replies_configmap_data = replies_configmap.and_then(|cm| cm.data).unwrap_or_default();
 
     let mut reply_map = deserialize_reply_map(replies_configmap_data);
@@ -541,6 +550,7 @@ pub async fn add_replies(
             &Patch::Apply(ConfigMap {
                 metadata: ObjectMeta {
                     name: Some(replies_configmap_name.clone()),
+                    annotations: Some(annotations),
                     ..Default::default()
                 },
                 data: Some(data_to_save),
@@ -573,6 +583,14 @@ pub async fn delete_reply(
                 "failed to get Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
             )
         })?;
+    let annotations = replies_configmap
+        .as_ref()
+        .and_then(|cm| cm.metadata.annotations.clone())
+        .unwrap_or_else(|| {
+            let mut annotation = BTreeMap::new();
+            annotation.insert(DICE_FEATURE_ANNOTATION_KEY.to_string(), "false".to_string());
+            annotation
+        });
     let replies_configmap_data = replies_configmap.and_then(|cm| cm.data).unwrap_or_default();
 
     let mut reply_map = deserialize_reply_map(replies_configmap_data);
@@ -590,6 +608,7 @@ pub async fn delete_reply(
             &Patch::Apply(ConfigMap {
                 metadata: ObjectMeta {
                     name: Some(replies_configmap_name.clone()),
+                    annotations: Some(annotations),
                     ..Default::default()
                 },
                 data: Some(data_to_save),
@@ -720,6 +739,109 @@ pub async fn disable_reply(domain: &str, handle: &str) -> eyre::Result<()> {
             "failed to delete Kubernetes Deployment `{deployment_name}`"
         )));
     }
+
+    Ok(())
+}
+
+pub async fn get_dice_feature_enabled(domain: &str, handle: &str) -> eyre::Result<bool> {
+    let client = client().await?;
+    let configmap_api = Api::<ConfigMap>::default_namespaced(client);
+
+    let replies_configmap_name = replies_configmap_name(domain, handle);
+    let replies_configmap = configmap_api
+        .get_opt(&replies_configmap_name)
+        .await
+        .with_context(|| {
+            format!(
+                "failed to get Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
+            )
+        })?;
+    Ok(replies_configmap
+        .and_then(|cm| cm.metadata.annotations)
+        .map(|an| an.get(DICE_FEATURE_ANNOTATION_KEY).map(String::as_str) == Some("true"))
+        .unwrap_or_default())
+}
+
+pub async fn enable_dice_feature(domain: &str, handle: &str) -> eyre::Result<()> {
+    let client = client().await?;
+    let configmap_api = Api::<ConfigMap>::default_namespaced(client);
+
+    let replies_configmap_name = replies_configmap_name(domain, handle);
+    let replies_configmap = configmap_api
+        .get_opt(&replies_configmap_name)
+        .await
+        .with_context(|| {
+            format!(
+                "failed to get Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
+            )
+        })?;
+    let mut annotations = replies_configmap
+        .as_ref()
+        .and_then(|cm| cm.metadata.annotations.clone())
+        .unwrap_or_default();
+    let configmap_data = replies_configmap.and_then(|cm| cm.data).unwrap_or_default();
+    annotations.insert(DICE_FEATURE_ANNOTATION_KEY.to_string(), "true".to_string());
+
+    configmap_api
+        .patch(
+            &replies_configmap_name,
+            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &Patch::Apply(ConfigMap {
+                metadata: ObjectMeta {
+                    name: Some(replies_configmap_name.clone()),
+                    annotations: Some(annotations),
+                    ..Default::default()
+                },
+                data: Some(configmap_data),
+                ..Default::default()
+            }),
+        )
+        .await
+        .with_context(|| {
+            format!("failed to patch Kubernetes ConfigMap `{replies_configmap_name}`")
+        })?;
+
+    Ok(())
+}
+
+pub async fn disable_dice_feature(domain: &str, handle: &str) -> eyre::Result<()> {
+    let client = client().await?;
+    let configmap_api = Api::<ConfigMap>::default_namespaced(client);
+
+    let replies_configmap_name = replies_configmap_name(domain, handle);
+    let replies_configmap = configmap_api
+        .get_opt(&replies_configmap_name)
+        .await
+        .with_context(|| {
+            format!(
+                "failed to get Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
+            )
+        })?;
+    let mut annotations = replies_configmap
+        .as_ref()
+        .and_then(|cm| cm.metadata.annotations.clone())
+        .unwrap_or_default();
+    let configmap_data = replies_configmap.and_then(|cm| cm.data).unwrap_or_default();
+    annotations.insert(DICE_FEATURE_ANNOTATION_KEY.to_string(), "false".to_string());
+
+    configmap_api
+        .patch(
+            &replies_configmap_name,
+            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &Patch::Apply(ConfigMap {
+                metadata: ObjectMeta {
+                    name: Some(replies_configmap_name.clone()),
+                    annotations: Some(annotations),
+                    ..Default::default()
+                },
+                data: Some(configmap_data),
+                ..Default::default()
+            }),
+        )
+        .await
+        .with_context(|| {
+            format!("failed to patch Kubernetes ConfigMap `{replies_configmap_name}`")
+        })?;
 
     Ok(())
 }
