@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use base64::Engine;
-use eyre::Context;
+use eyre::WrapErr;
 use k8s_openapi::{
     api::{
         apps::v1::{Deployment, DeploymentSpec},
@@ -34,7 +34,7 @@ async fn client() -> eyre::Result<kube::Client> {
     } else {
         let client = kube::Client::try_default()
             .await
-            .context("failed to initialize Kubernetes client")?;
+            .wrap_err("failed to initialize Kubernetes client")?;
         let _ = CLIENT.set(client.clone());
         Ok(client)
     }
@@ -82,7 +82,7 @@ pub async fn load_fediverse_app(domain: &str) -> eyre::Result<Option<FediverseAp
     let secret = secret_api
         .get_opt(&fediverse_app_secret_name(domain))
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!("failed to get fediverse app Kubernetes Secret for domain `{domain}`")
         })?;
     let Some(secret) = secret else {
@@ -100,15 +100,15 @@ pub async fn load_fediverse_app(domain: &str) -> eyre::Result<Option<FediverseAp
 
     let client_id = base64::engine::general_purpose::STANDARD
         .decode(&client_id.0)
-        .context("failed to decode client id secret data")?;
+        .wrap_err("failed to decode client id secret data")?;
     let client_secret = base64::engine::general_purpose::STANDARD
         .decode(&client_secret.0)
-        .context("failed to decode client secret secret data")?;
+        .wrap_err("failed to decode client secret secret data")?;
 
     let client_id =
-        String::from_utf8(client_id).context("failed to decode client id as UTF-8 string")?;
+        String::from_utf8(client_id).wrap_err("failed to decode client id as UTF-8 string")?;
     let client_secret = String::from_utf8(client_secret)
-        .context("failed to decode client secret as UTF-8 string")?;
+        .wrap_err("failed to decode client secret as UTF-8 string")?;
 
     Ok(Some(FediverseApp {
         client_id,
@@ -147,7 +147,7 @@ pub async fn save_fediverse_app(domain: &str, app: &FediverseApp) -> eyre::Resul
             }),
         )
         .await
-        .with_context(|| format!("failed to patch Kubernetes Secret `{name}`"))?;
+        .wrap_err_with(|| format!("failed to patch Kubernetes Secret `{name}`"))?;
 
     Ok(())
 }
@@ -188,7 +188,7 @@ pub async fn load_quotes(
     let quotes_configmap = configmap_api
         .get_opt(&quotes_configmap_name)
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!(
                 "failed to get quotes Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
             )
@@ -202,7 +202,7 @@ pub async fn load_quotes(
 
     let quote_dedup_configmap_name = quote_dedup_configmap_name(domain, handle);
     let quote_dedup_configmap = configmap_api.get_opt(&quote_dedup_configmap_name).await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!(
                 "failed to get quote dedup Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
             )
@@ -229,7 +229,7 @@ pub async fn add_quotes(
     let quotes_configmap = configmap_api
         .get_opt(&quotes_configmap_name)
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!(
                 "failed to get Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
             )
@@ -244,7 +244,7 @@ pub async fn add_quotes(
 
     let quote_dedup_configmap_name = quote_dedup_configmap_name(domain, handle);
     let quote_dedup_configmap = configmap_api.get_opt(&quote_dedup_configmap_name).await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!(
                 "failed to get quote dedup Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
             )
@@ -269,7 +269,7 @@ pub async fn add_quotes(
             }),
         )
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!("failed to patch Kubernetes ConfigMap `{quotes_configmap_name}`")
         })?;
 
@@ -288,7 +288,7 @@ pub async fn delete_quote(
     let quotes_configmap = configmap_api
         .get_opt(&quotes_configmap_name)
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!(
                 "failed to get Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
             )
@@ -299,7 +299,7 @@ pub async fn delete_quote(
 
     let quote_dedup_configmap_name = quote_dedup_configmap_name(domain, handle);
     let quote_dedup_configmap = configmap_api.get_opt(&quote_dedup_configmap_name).await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!(
                 "failed to get quote dedup Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
             )
@@ -324,7 +324,7 @@ pub async fn delete_quote(
             }),
         )
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!("failed to patch Kubernetes ConfigMap `{quotes_configmap_name}`")
         })?;
 
@@ -339,7 +339,7 @@ pub async fn load_cronjob(domain: &str, handle: &str) -> eyre::Result<(String, u
     let poster_cronjob = cronjob_api
         .get_opt(&poster_cronjob_name)
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!("failed to get quotes Kubernetes Cronjob for domain `{domain}` and handle `{handle}`")
         })?;
     let Some(poster_cronjob) = poster_cronjob else {
@@ -455,7 +455,7 @@ pub async fn save_cronjob(
             &Patch::Apply(poster_cronjob),
         )
         .await
-        .with_context(|| format!("failed to patch Kubernetes CronJob `{poster_cronjob_name}`"))?;
+        .wrap_err_with(|| format!("failed to patch Kubernetes CronJob `{poster_cronjob_name}`"))?;
 
     Ok(())
 }
@@ -488,7 +488,7 @@ pub async fn load_replies(
     let replies_configmap = configmap_api
         .get_opt(&replies_configmap_name)
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!(
                 "failed to get replies Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
             )
@@ -513,7 +513,7 @@ pub async fn add_replies(
     let replies_configmap = configmap_api
         .get_opt(&replies_configmap_name)
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!(
                 "failed to get replies Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
             )
@@ -558,7 +558,7 @@ pub async fn add_replies(
             }),
         )
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!("failed to patch Kubernetes ConfigMap `{replies_configmap_name}`")
         })?;
 
@@ -578,7 +578,7 @@ pub async fn delete_reply(
     let replies_configmap = configmap_api
         .get_opt(&replies_configmap_name)
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!(
                 "failed to get Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
             )
@@ -616,7 +616,7 @@ pub async fn delete_reply(
             }),
         )
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!("failed to patch Kubernetes ConfigMap `{replies_configmap_name}`")
         })?;
 
@@ -635,7 +635,7 @@ pub async fn delete_reply_all(
     let replies_configmap = configmap_api
         .get_opt(&replies_configmap_name)
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!(
                 "failed to get Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
             )
@@ -671,7 +671,7 @@ pub async fn delete_reply_all(
             }),
         )
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!("failed to patch Kubernetes ConfigMap `{replies_configmap_name}`")
         })?;
 
@@ -686,7 +686,7 @@ pub async fn get_reply_enabled(domain: &str, handle: &str) -> eyre::Result<bool>
     let deployment = deployment_api
         .get_opt(&deployment_name)
         .await
-        .with_context(|| format!("failed to get Kubernetes Deployment `{deployment_name}`"))?;
+        .wrap_err_with(|| format!("failed to get Kubernetes Deployment `{deployment_name}`"))?;
 
     Ok(deployment.is_some())
 }
@@ -771,7 +771,7 @@ pub async fn enable_reply(
             &Patch::Apply(deployment),
         )
         .await
-        .with_context(|| format!("failed to patch Kubernetes Deoloyment `{deployment_name}`"))?;
+        .wrap_err_with(|| format!("failed to patch Kubernetes Deoloyment `{deployment_name}`"))?;
 
     Ok(())
 }
@@ -806,7 +806,7 @@ pub async fn get_dice_feature_enabled(domain: &str, handle: &str) -> eyre::Resul
     let replies_configmap = configmap_api
         .get_opt(&replies_configmap_name)
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!(
                 "failed to get Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
             )
@@ -825,7 +825,7 @@ pub async fn enable_dice_feature(domain: &str, handle: &str) -> eyre::Result<()>
     let replies_configmap = configmap_api
         .get_opt(&replies_configmap_name)
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!(
                 "failed to get Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
             )
@@ -852,7 +852,7 @@ pub async fn enable_dice_feature(domain: &str, handle: &str) -> eyre::Result<()>
             }),
         )
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!("failed to patch Kubernetes ConfigMap `{replies_configmap_name}`")
         })?;
 
@@ -867,7 +867,7 @@ pub async fn disable_dice_feature(domain: &str, handle: &str) -> eyre::Result<()
     let replies_configmap = configmap_api
         .get_opt(&replies_configmap_name)
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!(
                 "failed to get Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
             )
@@ -894,7 +894,7 @@ pub async fn disable_dice_feature(domain: &str, handle: &str) -> eyre::Result<()
             }),
         )
         .await
-        .with_context(|| {
+        .wrap_err_with(|| {
             format!("failed to patch Kubernetes ConfigMap `{replies_configmap_name}`")
         })?;
 

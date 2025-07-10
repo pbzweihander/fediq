@@ -1,4 +1,4 @@
-use eyre::Context;
+use eyre::WrapErr;
 use http::HeaderMap;
 use once_cell::sync::Lazy;
 use serde::Serialize;
@@ -43,12 +43,12 @@ pub async fn post_mastodon(
         .json(&req)
         .send()
         .await
-        .with_context(|| format!("failed to request to `{url}`"))?;
+        .wrap_err_with(|| format!("failed to request to `{url}`"))?;
     let resp_status = resp.status();
     let resp_text = resp
         .text()
         .await
-        .with_context(|| format!("failed to read response from `{url}`"))?;
+        .wrap_err_with(|| format!("failed to read response from `{url}`"))?;
     if !resp_status.is_success() {
         Err(eyre::eyre!("error response received: `{resp_text}`"))
     } else {
@@ -83,12 +83,12 @@ pub async fn post_misskey(
         .json(&req)
         .send()
         .await
-        .with_context(|| format!("failed to request to `{url}`"))?;
+        .wrap_err_with(|| format!("failed to request to `{url}`"))?;
     let resp_status = resp.status();
     let resp_text = resp
         .text()
         .await
-        .with_context(|| format!("failed to read response from `{url}`"))?;
+        .wrap_err_with(|| format!("failed to read response from `{url}`"))?;
     if !resp_status.is_success() {
         Err(eyre::eyre!("error response received: `{resp_text}`"))
     } else {

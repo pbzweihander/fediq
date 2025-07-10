@@ -1,6 +1,6 @@
 use std::{str::FromStr, time::Duration};
 
-use eyre::{Context, OptionExt};
+use eyre::{OptionExt, WrapErr};
 use http::HeaderMap;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -59,12 +59,12 @@ pub async fn get_software_name(domain: &str) -> eyre::Result<String> {
         .get(&url)
         .send()
         .await
-        .with_context(|| format!("failed to request to `{url}`"))?
+        .wrap_err_with(|| format!("failed to request to `{url}`"))?
         .text()
         .await
-        .with_context(|| format!("failed to read response from `{url}`"))?;
+        .wrap_err_with(|| format!("failed to read response from `{url}`"))?;
     let resp = serde_json::from_str::<WellKnownNodeInfo>(&resp_text)
-        .with_context(|| format!("failed to parse response `{resp_text}`"))?;
+        .wrap_err_with(|| format!("failed to parse response `{resp_text}`"))?;
     let nodeinfo_href = resp
         .links
         .into_iter()
@@ -76,12 +76,12 @@ pub async fn get_software_name(domain: &str) -> eyre::Result<String> {
         .get(&nodeinfo_href)
         .send()
         .await
-        .with_context(|| format!("failed to request to `{nodeinfo_href}`"))?
+        .wrap_err_with(|| format!("failed to request to `{nodeinfo_href}`"))?
         .text()
         .await
-        .with_context(|| format!("failed to read response from `{nodeinfo_href}`"))?;
+        .wrap_err_with(|| format!("failed to read response from `{nodeinfo_href}`"))?;
     let resp = serde_json::from_str::<NodeInfo>(&resp_text)
-        .with_context(|| format!("failed to parse response `{resp_text}`"))?;
+        .wrap_err_with(|| format!("failed to parse response `{resp_text}`"))?;
 
     Ok(resp.software.name)
 }
@@ -104,10 +104,10 @@ async fn get_auth_redirect_url_mastodon(domain: &str) -> eyre::Result<Url> {
     let redirect_url = CONFIG
         .public_url
         .join(&format!("./auth/callback/mastodon/{domain}"))
-        .context("failed to generate redirect URL")?;
+        .wrap_err("failed to generate redirect URL")?;
     let app = if let Some(app) = load_fediverse_app(domain)
         .await
-        .context("failed to load fediverse app from Kubernetes")?
+        .wrap_err("failed to load fediverse app from Kubernetes")?
     {
         app
     } else {
@@ -127,12 +127,12 @@ async fn get_auth_redirect_url_mastodon(domain: &str) -> eyre::Result<Url> {
             .json(&req)
             .send()
             .await
-            .with_context(|| format!("failed to request to `{url}`"))?
+            .wrap_err_with(|| format!("failed to request to `{url}`"))?
             .text()
             .await
-            .with_context(|| format!("failed to read response from `{url}`"))?;
+            .wrap_err_with(|| format!("failed to read response from `{url}`"))?;
         let resp = serde_json::from_str::<MastodonCreateAppResp>(&resp_text)
-            .with_context(|| format!("failed to parse response `{resp_text}`"))?;
+            .wrap_err_with(|| format!("failed to parse response `{resp_text}`"))?;
 
         let app = FediverseApp {
             client_id: resp.client_id,
@@ -140,14 +140,14 @@ async fn get_auth_redirect_url_mastodon(domain: &str) -> eyre::Result<Url> {
         };
         save_fediverse_app(domain, &app)
             .await
-            .context("failed to save fediverse app to Kubernetes")?;
+            .wrap_err("failed to save fediverse app to Kubernetes")?;
         app
     };
 
     let client_id = app.client_id;
 
     let url = Url::from_str(&format!("https://{domain}/oauth/authorize?response_type=code&client_id={client_id}&redirect_uri={redirect_url}&scope=read:accounts+write:statuses+read:notifications"))
-        .context("failed to generate URL")?;
+        .wrap_err("failed to generate URL")?;
     Ok(url)
 }
 
@@ -180,14 +180,14 @@ struct MisskeyGenerateSessionResp {
 async fn get_auth_redirect_url_misskey(domain: &str) -> eyre::Result<Url> {
     let app = if let Some(app) = load_fediverse_app(domain)
         .await
-        .context("failed to load fediverse app from Kubernetes")?
+        .wrap_err("failed to load fediverse app from Kubernetes")?
     {
         app
     } else {
         let redirect_url = CONFIG
             .public_url
             .join(&format!("./auth/callback/misskey/{domain}"))
-            .context("failed to generate redirect URL")?;
+            .wrap_err("failed to generate redirect URL")?;
         let req = MisskeyCreateAppReq {
             name: if cfg!(debug_assertions) {
                 "fediq-debug.pbzweihander.dev"
@@ -204,12 +204,12 @@ async fn get_auth_redirect_url_misskey(domain: &str) -> eyre::Result<Url> {
             .json(&req)
             .send()
             .await
-            .with_context(|| format!("failed to request to `{url}`"))?
+            .wrap_err_with(|| format!("failed to request to `{url}`"))?
             .text()
             .await
-            .with_context(|| format!("failed to read response from `{url}`"))?;
+            .wrap_err_with(|| format!("failed to read response from `{url}`"))?;
         let resp = serde_json::from_str::<MisskeyCreateAppResp>(&resp_text)
-            .with_context(|| format!("failed to parse response `{resp_text}`"))?;
+            .wrap_err_with(|| format!("failed to parse response `{resp_text}`"))?;
 
         let app = FediverseApp {
             client_id: resp.id,
@@ -217,7 +217,7 @@ async fn get_auth_redirect_url_misskey(domain: &str) -> eyre::Result<Url> {
         };
         save_fediverse_app(domain, &app)
             .await
-            .context("failed to save fediverse app to Kubernetes")?;
+            .wrap_err("failed to save fediverse app to Kubernetes")?;
         app
     };
 
@@ -230,12 +230,12 @@ async fn get_auth_redirect_url_misskey(domain: &str) -> eyre::Result<Url> {
         .json(&req)
         .send()
         .await
-        .with_context(|| format!("failed to request to `{url}`"))?
+        .wrap_err_with(|| format!("failed to request to `{url}`"))?
         .text()
         .await
-        .with_context(|| format!("failed to read response from `{url}`"))?;
+        .wrap_err_with(|| format!("failed to read response from `{url}`"))?;
     let resp = serde_json::from_str::<MisskeyGenerateSessionResp>(&resp_text)
-        .with_context(|| format!("failed to parse response `{resp_text}`"))?;
+        .wrap_err_with(|| format!("failed to parse response `{resp_text}`"))?;
     Ok(resp.url)
 }
 
@@ -283,13 +283,13 @@ struct MastodonAccount {
 pub async fn login_mastodon(domain: &str, code: &str) -> eyre::Result<FediverseUser> {
     let app = load_fediverse_app(domain)
         .await
-        .context("failed to load fediverse app from Kubernetes")?
+        .wrap_err("failed to load fediverse app from Kubernetes")?
         .ok_or_eyre("fediverse app not found in Kubernetes")?;
 
     let redirect_url = CONFIG
         .public_url
         .join(&format!("./auth/callback/mastodon/{domain}"))
-        .context("failed to generate redirect URL")?;
+        .wrap_err("failed to generate redirect URL")?;
     let req = MastodonObtainTokenReq {
         grant_type: "authorization_code",
         code,
@@ -304,12 +304,12 @@ pub async fn login_mastodon(domain: &str, code: &str) -> eyre::Result<FediverseU
         .json(&req)
         .send()
         .await
-        .with_context(|| format!("failed to request to `{url}`"))?
+        .wrap_err_with(|| format!("failed to request to `{url}`"))?
         .text()
         .await
-        .with_context(|| format!("failed to read response from `{url}`"))?;
+        .wrap_err_with(|| format!("failed to read response from `{url}`"))?;
     let resp = serde_json::from_str::<MastodonObtainTokenResp>(&resp_text)
-        .with_context(|| format!("failed to parse response `{resp_text}`"))?;
+        .wrap_err_with(|| format!("failed to parse response `{resp_text}`"))?;
 
     let access_token = resp.access_token;
 
@@ -319,12 +319,12 @@ pub async fn login_mastodon(domain: &str, code: &str) -> eyre::Result<FediverseU
         .bearer_auth(&access_token)
         .send()
         .await
-        .with_context(|| format!("failed to request to `{url}`"))?
+        .wrap_err_with(|| format!("failed to request to `{url}`"))?
         .text()
         .await
-        .with_context(|| format!("failed to read response from `{url}`"))?;
+        .wrap_err_with(|| format!("failed to read response from `{url}`"))?;
     let resp = serde_json::from_str::<MastodonAccount>(&resp_text)
-        .with_context(|| format!("failed to parse response `{resp_text}`"))?;
+        .wrap_err_with(|| format!("failed to parse response `{resp_text}`"))?;
 
     Ok(FediverseUser::new(
         domain.to_string(),
@@ -356,7 +356,7 @@ struct MisskeySessionUserKeyResp {
 pub async fn login_misskey(domain: &str, token: &str) -> eyre::Result<FediverseUser> {
     let app = load_fediverse_app(domain)
         .await
-        .context("failed to load fediverse app from Kubernetes")?
+        .wrap_err("failed to load fediverse app from Kubernetes")?
         .ok_or_eyre("fediverse app not found in Kubernetes")?;
 
     let req = MisskeySessionUserKeyReq {
@@ -369,12 +369,12 @@ pub async fn login_misskey(domain: &str, token: &str) -> eyre::Result<FediverseU
         .json(&req)
         .send()
         .await
-        .with_context(|| format!("failed to request to `{url}`"))?
+        .wrap_err_with(|| format!("failed to request to `{url}`"))?
         .text()
         .await
-        .with_context(|| format!("failed to read response from `{url}`"))?;
+        .wrap_err_with(|| format!("failed to read response from `{url}`"))?;
     let resp = serde_json::from_str::<MisskeySessionUserKeyResp>(&resp_text)
-        .with_context(|| format!("failed to parse response `{resp_text}`"))?;
+        .wrap_err_with(|| format!("failed to parse response `{resp_text}`"))?;
 
     Ok(FediverseUser::new(
         domain.to_string(),
