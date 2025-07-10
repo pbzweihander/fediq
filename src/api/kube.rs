@@ -623,6 +623,61 @@ pub async fn delete_reply(
     Ok(reply_map)
 }
 
+pub async fn delete_reply_all(
+    domain: &str,
+    handle: &str,
+    keyword: String,
+) -> eyre::Result<BTreeMap<String, BTreeMap<Ulid, String>>> {
+    let client = client().await?;
+    let configmap_api = Api::<ConfigMap>::default_namespaced(client);
+
+    let replies_configmap_name = replies_configmap_name(domain, handle);
+    let replies_configmap = configmap_api
+        .get_opt(&replies_configmap_name)
+        .await
+        .with_context(|| {
+            format!(
+                "failed to get Kubernetes ConfigMap for domain `{domain}` and handle `{handle}`"
+            )
+        })?;
+    let annotations = replies_configmap
+        .as_ref()
+        .and_then(|cm| cm.metadata.annotations.clone())
+        .unwrap_or_else(|| {
+            let mut annotation = BTreeMap::new();
+            annotation.insert(DICE_FEATURE_ANNOTATION_KEY.to_string(), "false".to_string());
+            annotation
+        });
+    let replies_configmap_data = replies_configmap.and_then(|cm| cm.data).unwrap_or_default();
+
+    let mut reply_map = deserialize_reply_map(replies_configmap_data);
+
+    reply_map.remove(&keyword);
+
+    let data_to_save = serialize_reply_map(&reply_map);
+
+    configmap_api
+        .patch(
+            &replies_configmap_name,
+            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &Patch::Apply(ConfigMap {
+                metadata: ObjectMeta {
+                    name: Some(replies_configmap_name.clone()),
+                    annotations: Some(annotations),
+                    ..Default::default()
+                },
+                data: Some(data_to_save),
+                ..Default::default()
+            }),
+        )
+        .await
+        .with_context(|| {
+            format!("failed to patch Kubernetes ConfigMap `{replies_configmap_name}`")
+        })?;
+
+    Ok(reply_map)
+}
+
 pub async fn get_reply_enabled(domain: &str, handle: &str) -> eyre::Result<bool> {
     let client = client().await?;
     let deployment_api = Api::<Deployment>::default_namespaced(client);

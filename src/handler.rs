@@ -262,6 +262,9 @@ enum PostIndexReq {
         keyword: String,
         reply_id: Ulid,
     },
+    DeleteReplyAll {
+        keyword: String,
+    },
     ConfigureReply {
         #[serde(default)]
         enable: String,
@@ -818,6 +821,72 @@ async fn post_index(
         (Ok(user), PostIndexReq::DeleteReply { keyword, reply_id }) => {
             let reply_map = match delete_reply(&user.domain, &user.handle, keyword, reply_id).await
             {
+                Ok(replies) => replies,
+                Err(error) => {
+                    tracing::error!(?error, "failed to delete reply");
+                    load_replies(&user.domain, &user.handle)
+                        .await
+                        .unwrap_or_else(|error| {
+                            tracing::error!(?error, "failed to load replies");
+                            BTreeMap::new()
+                        })
+                }
+            };
+            let quotes = load_quotes(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to load quotes");
+                    BTreeMap::new()
+                });
+            let (cron_input, dedup_duration_minutes, suspend_schedule) =
+                load_cronjob(&user.domain, &user.handle)
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::error!(?error, "failed to load schedule");
+                        (String::new(), 0, false)
+                    });
+            let enable_reply = get_reply_enabled(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to get reply enabled");
+                    false
+                });
+            let enable_dice_feature = get_dice_feature_enabled(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to get dice feature enabled");
+                    false
+                });
+
+            Ok(Html(
+                IndexLoginTemplate {
+                    user,
+                    quote_mode_selected: false,
+                    quotes,
+                    is_quote_bulk_selected: false,
+                    quote_input: String::new(),
+                    quote_bulk_input: String::new(),
+                    quote_error: None,
+                    cron_input,
+                    cron_error: None,
+                    dedup_duration_minutes,
+                    suspend_schedule,
+                    enable_reply,
+                    is_reply_bulk_selected: false,
+                    reply_map,
+                    reply_keyword_input: String::new(),
+                    reply_input: String::new(),
+                    reply_bulk_input: String::new(),
+                    reply_error: None,
+                    language,
+                    enable_dice_feature,
+                }
+                .render()
+                .unwrap(),
+            ))
+        }
+        (Ok(user), PostIndexReq::DeleteReplyAll { keyword }) => {
+            let reply_map = match delete_reply_all(&user.domain, &user.handle, keyword).await {
                 Ok(replies) => replies,
                 Err(error) => {
                     tracing::error!(?error, "failed to delete reply");

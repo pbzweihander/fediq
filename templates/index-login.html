@@ -317,6 +317,15 @@
         {% if !replies.is_empty() %}
         <div class="chat chat-end py-4">
           <div class="chat-bubble chat-bubble-warning">{{ keyword }}</div>
+          {% let t_delete_all = self::t(language, "delete-all") %}
+          <div class="chat-footer">
+            <form method="post">
+              <input type="hidden" name="type" value="delete_reply_all" />
+              <input type="hidden" name="keyword" value="{{ keyword }}" />
+              <input class="underline text-blue-600 hover:text-red-600 cursor-pointer" type="submit"
+                value="{{ t_delete_all }}" />
+            </form>
+          </div>
         </div>
         {% for (id, reply) in replies.iter() %}
         <div class="chat chat-start">

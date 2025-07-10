@@ -51,3 +51,4 @@ reply-list = 응답 목록
 reply-post-guide = 한 키워드에 대한 응답은 추가한 여러 응답 중 하나가 랜덤으로 포스트됩니다.
 empty = 비어있음
 sent-recently = 최근에 보냄
+delete-all = 전체 삭제
