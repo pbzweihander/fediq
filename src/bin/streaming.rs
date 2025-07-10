@@ -385,6 +385,10 @@ fn get_dice(text: &str, rng: &mut impl rand::Rng) -> Option<String> {
             return None;
         }
 
+        if n == 1 {
+            return Some(rng.random_range(1..=m).to_string());
+        }
+
         let mut list = Vec::new();
         for _i in 0..n {
             let result = rng.random_range(1..=m);
