@@ -3,7 +3,7 @@ mod post;
 
 use std::{collections::BTreeMap, sync::LazyLock};
 
-use eyre::Context;
+use eyre::WrapErr;
 use futures_util::{SinkExt, StreamExt};
 use itertools::Itertools;
 use k8s_openapi::api::core::v1::ConfigMap;
@@ -68,12 +68,45 @@ async fn main() {
     let kube_client = kube::Client::try_default()
         .await
         .expect("failed to initialize Kubernetes client");
-    let configmap_api = Api::<ConfigMap>::default_namespaced(kube_client);
+
+    let stopper = stopper::Stopper::new();
+    tokio::spawn(shutdown_signal(stopper.clone()));
+
+    match config.software.as_ref() {
+        "mastodon" => stream_mastodon(
+            config.domain,
+            config.access_token,
+            config.replies_configmap_name,
+            kube_client,
+            &mut rng,
+            stopper,
+        )
+        .await
+        .expect("failed to stream Mastodon"),
+        "misskey" => stream_misskey(
+            config.domain,
+            config.access_token,
+            config.replies_configmap_name,
+            kube_client,
+            &mut rng,
+            stopper,
+        )
+        .await
+        .expect("failed to stream Misskey"),
+        software => panic!("unsupported software `{software}`"),
+    }
+}
+
+async fn get_reply_map_and_dice_feature(
+    kube_client: &kube::Client,
+    configmap_name: &str,
+) -> eyre::Result<(BTreeMap<String, BTreeMap<Ulid, String>>, bool)> {
+    let configmap_api = Api::<ConfigMap>::default_namespaced(kube_client.clone());
 
     let replies_configmap = configmap_api
-        .get(&config.replies_configmap_name)
+        .get(configmap_name)
         .await
-        .expect("failed to get replies Kubernetes ConfigMap");
+        .wrap_err("failed to get replies Kubernetes ConfigMap")?;
     let dice_feature = replies_configmap
         .metadata
         .annotations
@@ -86,44 +119,15 @@ async fn main() {
         .unwrap_or_default()
         .get("data")
         .and_then(|v| serde_json::from_str::<BTreeMap<String, BTreeMap<Ulid, String>>>(v).ok())
-        .expect("no reply data found");
-    if reply_map.is_empty() {
-        panic!("reply data empty");
-    }
-
-    let stopper = stopper::Stopper::new();
-    tokio::spawn(shutdown_signal(stopper.clone()));
-
-    match config.software.as_ref() {
-        "mastodon" => stream_mastodon(
-            config.domain,
-            config.access_token,
-            reply_map,
-            dice_feature,
-            &mut rng,
-            stopper,
-        )
-        .await
-        .expect("failed to stream Mastodon"),
-        "misskey" => stream_misskey(
-            config.domain,
-            config.access_token,
-            reply_map,
-            dice_feature,
-            &mut rng,
-            stopper,
-        )
-        .await
-        .expect("failed to stream Misskey"),
-        software => panic!("unsupported software `{software}`"),
-    }
+        .unwrap_or_default();
+    Ok((reply_map, dice_feature))
 }
 
 async fn stream_mastodon(
     domain: String,
     access_token: String,
-    reply_map: BTreeMap<String, BTreeMap<Ulid, String>>,
-    dice_feature: bool,
+    configmap_name: String,
+    kube_client: kube::Client,
     rng: &mut impl rand::Rng,
     stopper: stopper::Stopper,
 ) -> eyre::Result<()> {
@@ -166,17 +170,17 @@ async fn stream_mastodon(
         .upgrade()
         .send()
         .await
-        .context("failed to request websocket")?;
+        .wrap_err("failed to request websocket")?;
     let stream = resp
         .into_websocket()
         .await
-        .context("failed to connect websocket")?;
+        .wrap_err("failed to connect websocket")?;
     let mut stream = stopper.stop_stream(stream);
     while let Some(message) = stream
         .next()
         .await
         .transpose()
-        .context("failed to get message")?
+        .wrap_err("failed to get message")?
     {
         if let reqwest_websocket::Message::Text(payload) = message {
             if let Ok(Event { event, payload }) = serde_json::from_str::<Event>(&payload) {
@@ -185,6 +189,10 @@ async fn stream_mastodon(
                         serde_json::from_str::<EventInner>(&payload)
                     {
                         tracing::info!(?account, ?status, "got mention");
+                        let (reply_map, dice_feature) =
+                            get_reply_map_and_dice_feature(&kube_client, &configmap_name)
+                                .await
+                                .wrap_err("failed to get reply map and dice feature")?;
                         if let Some(reply) = get_reply(&status.content, &reply_map, rng) {
                             tracing::info!(reply, "replying");
                             if let Err(error) = post::post_mastodon(
@@ -230,8 +238,8 @@ async fn stream_mastodon(
 async fn stream_misskey(
     domain: String,
     access_token: String,
-    reply_map: BTreeMap<String, BTreeMap<Ulid, String>>,
-    dice_feature: bool,
+    configmap_name: String,
+    kube_client: kube::Client,
     rng: &mut impl rand::Rng,
     stopper: stopper::Stopper,
 ) -> eyre::Result<()> {
@@ -275,11 +283,11 @@ async fn stream_misskey(
         .upgrade()
         .send()
         .await
-        .context("failed to request websocket")?;
+        .wrap_err("failed to request websocket")?;
     let mut stream = resp
         .into_websocket()
         .await
-        .context("failed to connect websocket")?;
+        .wrap_err("failed to connect websocket")?;
     let channel_id = Ulid::new();
     stream
         .send(reqwest_websocket::Message::Text(
@@ -290,14 +298,14 @@ async fn stream_misskey(
             .unwrap(),
         ))
         .await
-        .context("failed to connect channel")?;
-    stream.flush().await.context("failed to flush stream")?;
+        .wrap_err("failed to connect channel")?;
+    stream.flush().await.wrap_err("failed to flush stream")?;
     let mut stream = stopper.stop_stream(stream);
     while let Some(message) = stream
         .next()
         .await
         .transpose()
-        .context("failed to get message")?
+        .wrap_err("failed to get message")?
     {
         if let reqwest_websocket::Message::Text(payload) = message {
             if let Ok(Message::Channel {
@@ -312,6 +320,10 @@ async fn stream_misskey(
             {
                 if rx_channel_id == channel_id.to_string() {
                     tracing::info!(?user, text, "got mention");
+                    let (reply_map, dice_feature) =
+                        get_reply_map_and_dice_feature(&kube_client, &configmap_name)
+                            .await
+                            .wrap_err("failed to get reply map and dice feature")?;
                     if let Some(reply) = get_reply(&text, &reply_map, rng) {
                         tracing::info!(reply, "replying");
                         if let Err(error) = post::post_misskey(
