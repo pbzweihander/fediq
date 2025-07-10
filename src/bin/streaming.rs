@@ -22,6 +22,33 @@ struct Config {
     replies_configmap_name: String,
 }
 
+async fn shutdown_signal(stopper: stopper::Stopper) {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    tracing::info!("signal received, starting graceful shutdown");
+    stopper.stop();
+}
+
 #[tokio::main]
 async fn main() {
     color_eyre::install().expect("failed to install color-eyre");
@@ -64,6 +91,9 @@ async fn main() {
         panic!("reply data empty");
     }
 
+    let stopper = stopper::Stopper::new();
+    tokio::spawn(shutdown_signal(stopper.clone()));
+
     match config.software.as_ref() {
         "mastodon" => stream_mastodon(
             config.domain,
@@ -71,6 +101,7 @@ async fn main() {
             reply_map,
             dice_feature,
             &mut rng,
+            stopper,
         )
         .await
         .expect("failed to stream Mastodon"),
@@ -80,6 +111,7 @@ async fn main() {
             reply_map,
             dice_feature,
             &mut rng,
+            stopper,
         )
         .await
         .expect("failed to stream Misskey"),
@@ -93,6 +125,7 @@ async fn stream_mastodon(
     reply_map: BTreeMap<String, BTreeMap<Ulid, String>>,
     dice_feature: bool,
     rng: &mut impl rand::Rng,
+    stopper: stopper::Stopper,
 ) -> eyre::Result<()> {
     #[derive(Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -134,10 +167,11 @@ async fn stream_mastodon(
         .send()
         .await
         .context("failed to request websocket")?;
-    let mut stream = resp
+    let stream = resp
         .into_websocket()
         .await
         .context("failed to connect websocket")?;
+    let mut stream = stopper.stop_stream(stream);
     while let Some(message) = stream
         .next()
         .await
@@ -199,6 +233,7 @@ async fn stream_misskey(
     reply_map: BTreeMap<String, BTreeMap<Ulid, String>>,
     dice_feature: bool,
     rng: &mut impl rand::Rng,
+    stopper: stopper::Stopper,
 ) -> eyre::Result<()> {
     #[derive(Debug, Deserialize, Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -257,6 +292,7 @@ async fn stream_misskey(
         .await
         .context("failed to connect channel")?;
     stream.flush().await.context("failed to flush stream")?;
+    let mut stream = stopper.stop_stream(stream);
     while let Some(message) = stream
         .next()
         .await

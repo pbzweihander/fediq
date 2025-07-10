@@ -34,6 +34,7 @@ reqwest = { version = "0.12.22", features = [
 reqwest-websocket = "0.5.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
+stopper = "0.2.8"
 time = { version = "0.3.41", features = ["parsing"] }
 tokio = { version = "1.46.1", features = [
     "rt-multi-thread",
