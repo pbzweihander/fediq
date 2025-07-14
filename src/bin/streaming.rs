@@ -72,28 +72,37 @@ async fn main() {
     let stopper = stopper::Stopper::new();
     tokio::spawn(shutdown_signal(stopper.clone()));
 
-    match config.software.as_ref() {
-        "mastodon" => stream_mastodon(
-            config.domain,
-            config.access_token,
-            config.replies_configmap_name,
-            kube_client,
-            &mut rng,
-            stopper,
-        )
-        .await
-        .expect("failed to stream Mastodon"),
-        "misskey" => stream_misskey(
-            config.domain,
-            config.access_token,
-            config.replies_configmap_name,
-            kube_client,
-            &mut rng,
-            stopper,
-        )
-        .await
-        .expect("failed to stream Misskey"),
-        software => panic!("unsupported software `{software}`"),
+    loop {
+        let res = match config.software.as_ref() {
+            "mastodon" => {
+                stream_mastodon(
+                    &config.domain,
+                    &config.access_token,
+                    &config.replies_configmap_name,
+                    &kube_client,
+                    &mut rng,
+                    &stopper,
+                )
+                .await
+            }
+            "misskey" => {
+                stream_misskey(
+                    &config.domain,
+                    &config.access_token,
+                    &config.replies_configmap_name,
+                    &kube_client,
+                    &mut rng,
+                    &stopper,
+                )
+                .await
+            }
+            software => panic!("unsupported software `{software}`"),
+        };
+        if let Err(error) = res {
+            tracing::error!(?error, "failed to stream. retrying...");
+        } else {
+            break;
+        }
     }
 }
 
@@ -124,12 +133,12 @@ async fn get_reply_map_and_dice_feature(
 }
 
 async fn stream_mastodon(
-    domain: String,
-    access_token: String,
-    configmap_name: String,
-    kube_client: kube::Client,
+    domain: &str,
+    access_token: &str,
+    configmap_name: &str,
+    kube_client: &kube::Client,
     rng: &mut impl rand::Rng,
-    stopper: stopper::Stopper,
+    stopper: &stopper::Stopper,
 ) -> eyre::Result<()> {
     #[derive(Debug, Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -166,7 +175,7 @@ async fn stream_mastodon(
         .get(format!(
             "wss://{domain}/api/v1/streaming?stream=user:notification"
         ))
-        .bearer_auth(&access_token)
+        .bearer_auth(access_token)
         .upgrade()
         .send()
         .await
@@ -190,14 +199,14 @@ async fn stream_mastodon(
                     {
                         tracing::info!(?account, ?status, "got mention");
                         let (reply_map, dice_feature) =
-                            get_reply_map_and_dice_feature(&kube_client, &configmap_name)
+                            get_reply_map_and_dice_feature(kube_client, configmap_name)
                                 .await
                                 .wrap_err("failed to get reply map and dice feature")?;
                         if let Some(reply) = get_reply(&status.content, &reply_map, rng) {
                             tracing::info!(reply, "replying");
                             if let Err(error) = post::post_mastodon(
-                                &domain,
-                                &access_token,
+                                domain,
+                                access_token,
                                 &format!("@{} {}", account.acct, reply),
                                 Some(status.id),
                             )
@@ -211,8 +220,8 @@ async fn stream_mastodon(
                             if let Some(dice_result) = get_dice(&status.content, rng) {
                                 tracing::info!(dice_result, "replying dice result");
                                 if let Err(error) = post::post_mastodon(
-                                    &domain,
-                                    &access_token,
+                                    domain,
+                                    access_token,
                                     &format!("@{} {}", account.acct, dice_result),
                                     Some(status.id),
                                 )
@@ -236,12 +245,12 @@ async fn stream_mastodon(
 }
 
 async fn stream_misskey(
-    domain: String,
-    access_token: String,
-    configmap_name: String,
-    kube_client: kube::Client,
+    domain: &str,
+    access_token: &str,
+    configmap_name: &str,
+    kube_client: &kube::Client,
     rng: &mut impl rand::Rng,
-    stopper: stopper::Stopper,
+    stopper: &stopper::Stopper,
 ) -> eyre::Result<()> {
     #[derive(Debug, Deserialize, Serialize)]
     #[serde(rename_all = "camelCase")]
@@ -321,14 +330,14 @@ async fn stream_misskey(
                 if rx_channel_id == channel_id.to_string() {
                     tracing::info!(?user, text, "got mention");
                     let (reply_map, dice_feature) =
-                        get_reply_map_and_dice_feature(&kube_client, &configmap_name)
+                        get_reply_map_and_dice_feature(kube_client, configmap_name)
                             .await
                             .wrap_err("failed to get reply map and dice feature")?;
                     if let Some(reply) = get_reply(&text, &reply_map, rng) {
                         tracing::info!(reply, "replying");
                         if let Err(error) = post::post_misskey(
-                            &domain,
-                            &access_token,
+                            domain,
+                            access_token,
                             &format!("@{}@{} {}", user.username, user.host, reply),
                             Some(note_id.clone()),
                         )
@@ -342,14 +351,14 @@ async fn stream_misskey(
                         if let Some(dice_result) = get_dice(&text, rng) {
                             tracing::info!(dice_result, "replying dice result");
                             if let Err(error) = post::post_misskey(
-                                &domain,
-                                &access_token,
+                                domain,
+                                access_token,
                                 &format!("@{}@{} {}", user.username, user.host, dice_result),
                                 Some(note_id),
                             )
                             .await
                             {
-                                tracing::error!(?error, "failed to post dice result to Mastodon");
+                                tracing::error!(?error, "failed to post dice result to Misskey");
                             }
                             continue;
                         }
