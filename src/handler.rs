@@ -294,15 +294,32 @@ async fn post_index(
                     .render()
                     .unwrap(),
                 ));
+            } else if domain.contains('@') {
+                return Ok(Html(
+                    IndexLogoutTemplate {
+                        domain,
+                        domain_error: Some(TemplateError {
+                            summary: t(&language, "please-domain-only"),
+                            detail: None,
+                        }),
+                        language,
+                    }
+                    .render()
+                    .unwrap(),
+                ));
             }
 
-            match get_auth_redirect_url(&domain).await {
+            let domain = domain.strip_prefix("https://").unwrap_or(&domain);
+            let domain = domain.strip_prefix("http://").unwrap_or(domain);
+            let domain = domain.strip_suffix('/').unwrap_or(domain);
+
+            match get_auth_redirect_url(domain).await {
                 Ok(redirect_url) => Err(Redirect::to(redirect_url.as_str())),
                 Err(error) => {
                     tracing::warn!(?error, "failed to get auth redirect URL");
                     Ok(Html(
                         IndexLogoutTemplate {
-                            domain,
+                            domain: domain.to_string(),
                             domain_error: Some(TemplateError {
                                 summary: t(&language, "login-error"),
                                 detail: Some(format!("{error:?}")),
