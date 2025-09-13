@@ -108,7 +108,7 @@ async fn main() {
     configmap_api
         .patch(
             &config.quote_dedup_configmap_name,
-            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &PatchParams::apply("fediq.pbzweihander.dev").force(),
             &Patch::Apply(ConfigMap {
                 metadata: ObjectMeta {
                     name: Some(config.quote_dedup_configmap_name.clone()),

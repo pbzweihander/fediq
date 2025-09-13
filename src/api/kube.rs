@@ -136,7 +136,7 @@ pub async fn save_fediverse_app(domain: &str, app: &FediverseApp) -> eyre::Resul
     secret_api
         .patch(
             &name,
-            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &PatchParams::apply("fediq.pbzweihander.dev").force(),
             &Patch::Apply(Secret {
                 metadata: ObjectMeta {
                     name: Some(name.clone()),
@@ -258,7 +258,7 @@ pub async fn add_quotes(
     configmap_api
         .patch(
             &quotes_configmap_name,
-            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &PatchParams::apply("fediq.pbzweihander.dev").force(),
             &Patch::Apply(ConfigMap {
                 metadata: ObjectMeta {
                     name: Some(quotes_configmap_name.clone()),
@@ -313,7 +313,7 @@ pub async fn delete_quote(
     configmap_api
         .patch(
             &quotes_configmap_name,
-            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &PatchParams::apply("fediq.pbzweihander.dev").force(),
             &Patch::Apply(ConfigMap {
                 metadata: ObjectMeta {
                     name: Some(quotes_configmap_name.clone()),
@@ -451,7 +451,7 @@ pub async fn save_cronjob(
     cronjob_api
         .patch(
             &poster_cronjob_name,
-            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &PatchParams::apply("fediq.pbzweihander.dev").force(),
             &Patch::Apply(poster_cronjob),
         )
         .await
@@ -546,7 +546,7 @@ pub async fn add_replies(
     configmap_api
         .patch(
             &replies_configmap_name,
-            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &PatchParams::apply("fediq.pbzweihander.dev").force(),
             &Patch::Apply(ConfigMap {
                 metadata: ObjectMeta {
                     name: Some(replies_configmap_name.clone()),
@@ -604,7 +604,7 @@ pub async fn delete_reply(
     configmap_api
         .patch(
             &replies_configmap_name,
-            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &PatchParams::apply("fediq.pbzweihander.dev").force(),
             &Patch::Apply(ConfigMap {
                 metadata: ObjectMeta {
                     name: Some(replies_configmap_name.clone()),
@@ -659,7 +659,7 @@ pub async fn delete_reply_all(
     configmap_api
         .patch(
             &replies_configmap_name,
-            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &PatchParams::apply("fediq.pbzweihander.dev").force(),
             &Patch::Apply(ConfigMap {
                 metadata: ObjectMeta {
                     name: Some(replies_configmap_name.clone()),
@@ -767,7 +767,7 @@ pub async fn enable_reply(
     deployment_api
         .patch(
             &deployment_name,
-            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &PatchParams::apply("fediq.pbzweihander.dev").force(),
             &Patch::Apply(deployment),
         )
         .await
@@ -840,7 +840,7 @@ pub async fn enable_dice_feature(domain: &str, handle: &str) -> eyre::Result<()>
     configmap_api
         .patch(
             &replies_configmap_name,
-            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &PatchParams::apply("fediq.pbzweihander.dev").force(),
             &Patch::Apply(ConfigMap {
                 metadata: ObjectMeta {
                     name: Some(replies_configmap_name.clone()),
@@ -882,7 +882,7 @@ pub async fn disable_dice_feature(domain: &str, handle: &str) -> eyre::Result<()
     configmap_api
         .patch(
             &replies_configmap_name,
-            &PatchParams::apply("fediq.pbzweihander.dev"),
+            &PatchParams::apply("fediq.pbzweihander.dev").force(),
             &Patch::Apply(ConfigMap {
                 metadata: ObjectMeta {
                     name: Some(replies_configmap_name.clone()),
