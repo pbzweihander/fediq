@@ -391,6 +391,8 @@ pub async fn save_cronjob(
             schedule: cron.to_string(),
             suspend: Some(suspend),
             starting_deadline_seconds: Some(360),
+            successful_jobs_history_limit: Some(0),
+            failed_jobs_history_limit: Some(1),
             job_template: JobTemplateSpec {
                 metadata: None,
                 spec: Some(JobSpec {
