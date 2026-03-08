@@ -55,7 +55,7 @@
 
           {% if let Some(error) = quote_error %}
           {% if let Some(detail) = error.detail %}
-          <details class="label text-error whitespace-normal">
+          <details class="label text-error whitespace-normal flex-col items-start">
             <summary>{{ error.summary }}</summary>
             <p class="m-2.5 whitespace-pre-wrap font-mono">{{- detail -}}</p>
           </details>
@@ -81,7 +81,7 @@
 
           {% if let Some(error) = cron_error %}
           {% if let Some(detail) = error.detail %}
-          <details class="label text-error whitespace-normal">
+          <details class="label text-error whitespace-normal flex-col items-start">
             <summary>{{ error.summary }}</summary>
             <p class="m-2.5 whitespace-pre-wrap font-mono">{{- detail -}}</p>
           </details>
@@ -90,7 +90,7 @@
           {% endif %}
           {% endif %}
 
-          <details class="label whitespace-normal">
+          <details class="label whitespace-normal flex-col items-start">
             <summary>
               {{ language|t("what-is-cron-expression") }}
             </summary>
@@ -265,7 +265,7 @@
 
           {% if let Some(error) = reply_error %}
           {% if let Some(detail) = error.detail %}
-          <details class="label text-error whitespace-normal">
+          <details class="label text-error whitespace-normal flex-col items-start">
             <summary>{{ error.summary }}</summary>
             <p class="m-2.5 whitespace-pre-wrap font-mono">{{- detail -}}</p>
           </details>
@@ -301,6 +301,14 @@
             {% let t_save = self::t(language, "save") %}
             <input type="submit" class="btn btn-primary max-w-3xs w-full" value="{{ t_save }}" />
           </div>
+        </form>
+        <form class="fieldset mt-5 flex flex-col items-center w-full" method="post">
+          <input type="hidden" name="type" value="restart_reply" />
+          <label class="label whitespace-normal">
+            {{ language|t("restart-reply-guide") }}
+          </label>
+          {% let t_restart = self::t(language, "restart") %}
+          <input type="submit" class="btn btn-warning max-w-3xs w-full" value="{{ t_restart }}" />
         </form>
       </div>
       <div class="divider"></div>

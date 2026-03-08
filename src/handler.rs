@@ -271,6 +271,7 @@ enum PostIndexReq {
         #[serde(default)]
         dice_feature: String,
     },
+    RestartReply {},
 }
 
 #[tracing::instrument(skip_all, fields(user = fmt_user(&user)))]
@@ -995,6 +996,70 @@ async fn post_index(
                 }
             } else if let Err(error) = disable_dice_feature(&user.domain, &user.handle).await {
                 tracing::error!(?error, "failed to disable dice feature");
+            }
+
+            let quotes = load_quotes(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to load quotes");
+                    BTreeMap::new()
+                });
+            let (cron_input, dedup_duration_minutes, suspend_schedule) =
+                load_cronjob(&user.domain, &user.handle)
+                    .await
+                    .unwrap_or_else(|error| {
+                        tracing::error!(?error, "failed to load schedule");
+                        (String::new(), 0, false)
+                    });
+            let reply_map = load_replies(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to load replies");
+                    BTreeMap::new()
+                });
+            let enable_reply = get_reply_enabled(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to get reply enabled");
+                    false
+                });
+            let enable_dice_feature = get_dice_feature_enabled(&user.domain, &user.handle)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::error!(?error, "failed to get dice feature enabled");
+                    false
+                });
+
+            Ok(Html(
+                IndexLoginTemplate {
+                    language,
+                    user,
+                    quote_mode_selected: false,
+                    quotes,
+                    is_quote_bulk_selected: false,
+                    quote_input: String::new(),
+                    quote_bulk_input: String::new(),
+                    quote_error: None,
+                    cron_input,
+                    cron_error: None,
+                    dedup_duration_minutes,
+                    suspend_schedule,
+                    enable_reply,
+                    is_reply_bulk_selected: false,
+                    reply_map,
+                    reply_keyword_input: String::new(),
+                    reply_input: String::new(),
+                    reply_bulk_input: String::new(),
+                    reply_error: None,
+                    enable_dice_feature,
+                }
+                .render()
+                .unwrap(),
+            ))
+        }
+        (Ok(user), PostIndexReq::RestartReply {}) => {
+            if let Err(error) = restart_reply(&user.domain, &user.handle).await {
+                tracing::error!(?error, "failed to restart reply");
             }
 
             let quotes = load_quotes(&user.domain, &user.handle)

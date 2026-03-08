@@ -9,7 +9,7 @@
       name="domain" placeholder="mastodon.social" value="{{ domain }}" required />
     {% if let Some(error) = domain_error %}
     {% if let Some(detail) = error.detail %}
-    <details class="label text-error whitespace-normal">
+    <details class="label text-error whitespace-normal flex-col items-start">
       <summary>{{ error.summary }}</summary>
       <p class="m-2.5 whitespace-pre-wrap font-mono">{{- detail -}}</p>
     </details>

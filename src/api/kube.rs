@@ -40,38 +40,43 @@ async fn client() -> eyre::Result<kube::Client> {
     }
 }
 
+#[cfg(not(debug_assertions))]
+const FEDIQ_NAME: &str = "fediq";
+#[cfg(debug_assertions)]
+const FEDIQ_NAME: &str = "fediq-debug";
+
 fn fediverse_app_secret_name(domain: &str) -> String {
-    format!("fediq-fediverse-app-{domain}")
+    format!("{FEDIQ_NAME}-fediverse-app-{domain}")
         .to_ascii_lowercase()
         .replace('_', "-")
 }
 
 fn quotes_configmap_name(domain: &str, handle: &str) -> String {
-    format!("fediq-quotes-{domain}-{handle}")
+    format!("{FEDIQ_NAME}-quotes-{domain}-{handle}")
         .to_ascii_lowercase()
         .replace('_', "-")
 }
 
 fn replies_configmap_name(domain: &str, handle: &str) -> String {
-    format!("fediq-replies-{domain}-{handle}")
+    format!("{FEDIQ_NAME}-replies-{domain}-{handle}")
         .to_ascii_lowercase()
         .replace('_', "-")
 }
 
 fn quote_dedup_configmap_name(domain: &str, handle: &str) -> String {
-    format!("fediq-quote-dedup-{domain}-{handle}")
+    format!("{FEDIQ_NAME}-quote-dedup-{domain}-{handle}")
         .to_ascii_lowercase()
         .replace('_', "-")
 }
 
 fn poster_cronjob_name(domain: &str, handle: &str) -> String {
-    format!("fediq-poster-{domain}-{handle}")
+    format!("{FEDIQ_NAME}-poster-{domain}-{handle}")
         .to_ascii_lowercase()
         .replace('_', "-")
 }
 
 fn streaming_deployment_name(domain: &str, handle: &str) -> String {
-    format!("fediq-streaming-{domain}-{handle}")
+    format!("{FEDIQ_NAME}-streaming-{domain}-{handle}")
         .to_ascii_lowercase()
         .replace('_', "-")
 }
@@ -899,6 +904,26 @@ pub async fn disable_dice_feature(domain: &str, handle: &str) -> eyre::Result<()
         .wrap_err_with(|| {
             format!("failed to patch Kubernetes ConfigMap `{replies_configmap_name}`")
         })?;
+
+    Ok(())
+}
+
+pub async fn restart_reply(domain: &str, handle: &str) -> eyre::Result<()> {
+    let client = client().await?;
+    let deployment_api = Api::<Deployment>::default_namespaced(client);
+
+    let deployment_name = streaming_deployment_name(domain, handle);
+
+    if let Err(error) = deployment_api.restart(&deployment_name).await {
+        if let kube::Error::Api(kube::error::ErrorResponse { reason, .. }) = &error {
+            if reason == "NotFound" {
+                return Ok(());
+            }
+        }
+        return Err(eyre::Report::new(error).wrap_err(format!(
+            "failed to delete Kubernetes Deployment `{deployment_name}`"
+        )));
+    }
 
     Ok(())
 }
