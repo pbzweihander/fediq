@@ -401,6 +401,8 @@ pub async fn save_cronjob(
             job_template: JobTemplateSpec {
                 metadata: None,
                 spec: Some(JobSpec {
+                    backoff_limit: Some(3),
+                    ttl_seconds_after_finished: Some(8 * 60 * 60),
                     template: PodTemplateSpec {
                         metadata: None,
                         spec: Some(PodSpec {
