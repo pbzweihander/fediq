@@ -663,7 +663,7 @@ async fn post_index(
             Ok(Html(
                 IndexLoginTemplate {
                     user,
-                    quote_mode_selected: false,
+                    quote_mode_selected: true,
                     quotes,
                     is_quote_bulk_selected: false,
                     quote_input: String::new(),
